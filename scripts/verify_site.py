@@ -8,7 +8,9 @@ rust=(root/"web/src/main.rs").read_text()
 auth=(root/"web/auth.js").read_text()
 manifest=json.loads((root/"site/manifest.webmanifest").read_text())
 checks={
-"Artwork retained as a separate original JPEG":(root/"site/assets/ellipse-art.jpg").is_file(),
+"Clean standalone artwork shipped":(root/"site/assets/ellipse-knight-clean.jpg").is_file(),
+"No legacy quote artwork":not (root/"site/assets/ellipse-art.jpg").exists(),
+"Clean image used by Rust and static fallback":"/assets/ellipse-knight-clean.jpg" in rust and "/assets/ellipse-knight-clean.jpg" in site,
 "No white box":'class="form-container"' not in site and "auth-panel" not in site,
 "Google-only sign-in screen":"Continue with Google" in site and "Continue with Google" in rust,
 "Firebase Google provider":"signInWithPopup" in auth and "GoogleAuthProvider" in auth,

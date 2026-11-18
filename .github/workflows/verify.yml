@@ -33,4 +33,4 @@ jobs:
         run: |
           test -s dist/index.html
           find dist -name '*.wasm' -size +1c | grep -q wasm
-          test -s dist/assets/ellipse-art.jpg
+          test -s dist/assets/ellipse-knight-clean.jpg

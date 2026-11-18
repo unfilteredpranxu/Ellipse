@@ -1,6 +1,6 @@
 /* Static shell only. Auth credentials and Firebase network responses are never cached. */
-const CACHE="ellipse-shell-v2";
-const FILES=["/","/favicon.svg","/manifest.webmanifest","/assets/ellipse-art.jpg"];
+const CACHE="ellipse-shell-v3";
+const FILES=["/","/favicon.svg","/manifest.webmanifest","/assets/ellipse-knight-clean.jpg"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
 self.addEventListener("fetch",e=>{

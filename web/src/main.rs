@@ -61,7 +61,7 @@ fn App() -> impl IntoView {
     view! {
         <main class="screen" aria-label="Ellipse welcome">
             <div class="hero-wrap">
-                <img class="hero-art" src="/assets/ellipse-art.jpg"
+                <img class="hero-art" src="/assets/ellipse-knight-clean.jpg"
                     alt="Black and white stippled fantasy knight with sword"
                     fetchpriority="high"/>
             </div>

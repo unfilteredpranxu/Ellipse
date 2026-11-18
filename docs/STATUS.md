@@ -2,12 +2,12 @@
 
 ## Implemented in source
 - Private/proprietary repository stays the source of truth.
-- Original artwork extracted byte-for-byte from the prior self-contained HTML to site/assets/ellipse-art.jpg.
-- New full-screen dark welcome with no white form, no quote box, only the bottom glass Google button.
+- Replaced the legacy quotation-embedded JPEG with the user's clean standalone monochrome artwork at site/assets/ellipse-knight-clean.jpg; no retouching or quote overlay. The former image is removed from the current tree.
+- Phone layout: edge-to-edge monochrome knight, frosted Google button only; iPad/desktop layout: unblurred split-panel welcome and clean image.
 - Firebase Google-only web sign-in bridge using the existing ellipse-84ac1 project (existing authorized Pages domain).
 - Rust Leptos client-side rendered welcome screen in web/src/main.rs, using Trunk to build WebAssembly.
 - Tauri 2 native shell consumes the compiled Leptos frontend when built.
-- Cloudflare Pages keeps serving site/ until its build command and output directory are deliberately switched to scripts/build-pages.sh and dist/.
+- Cloudflare Pages is configured to build and serve the Rust/Leptos WASM via scripts/build-pages.sh into dist/. Confirm deployment success and visually smoke-test the newest production URL.
 
 ## Still require test/evidence
 - Browser Google popup, Firebase session persistence, browser and platform QA.
