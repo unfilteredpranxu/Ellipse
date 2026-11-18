@@ -29,6 +29,7 @@ struct NotesState {
     saving: RwSignal<SaveState>,
     maintenance: RwSignal<bool>,
     recovery_required: RwSignal<bool>,
+    restore_required: RwSignal<bool>,
     error: RwSignal<String>,
     current: RwSignal<Option<Id>>,
     selected: RwSignal<Option<Id>>,
@@ -52,6 +53,7 @@ impl NotesState {
             saving: RwSignal::new(SaveState::Clean),
             maintenance: RwSignal::new(false),
             recovery_required: RwSignal::new(false),
+            restore_required: RwSignal::new(false),
             error: RwSignal::new(String::new()),
             current: RwSignal::new(None),
             selected: RwSignal::new(None),
@@ -142,6 +144,7 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
     let state = NotesState::new(local);
     let loaded = RwSignal::new(!local);
     let bootstrap_error = RwSignal::new(String::new());
+    let restore_status = RwSignal::new(String::new());
     let load = move || {
         spawn_local(async move {
             match io::load().await {
@@ -153,6 +156,7 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
                         state.head.set(snapshot.head);
                         state.vault.set(snapshot.vault);
                         state.recovery_required.set(snapshot.recovered);
+                        state.restore_required.set(snapshot.restore_required);
                         loaded.set(true);
                     });
                 }
@@ -175,23 +179,38 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
                     <button type="button" on:click=move |_| back.run(())>"Back to Ellipse"</button>
                 </main>
             }>
-                <Show when=move || state.recovery_required.get() fallback=move || view! {
-                    {move || match state.current.get() {
-                        Some(id) => view! { <editor::Editor state id/> }.into_any(),
-                        None => view! { <library::Library state settings back/> }.into_any(),
-                    }}
+                <Show when=move || state.restore_required.get() fallback=move || view! {
+                    <Show when=move || state.recovery_required.get() fallback=move || view! {
+                        {move || match state.current.get() {
+                            Some(id) => view! { <editor::Editor state id/> }.into_any(),
+                            None => view! { <library::Library state settings back/> }.into_any(),
+                        }}
+                    }>
+                        <main class="notes-empty">
+                            <h1>"Recover Notes"</h1>
+                            <p>"Notes found a recoverable checkpoint. Save it before editing documents."</p>
+                            <Show when=move || state.saving.get()==SaveState::Error>
+                                <p role="alert">{move || state.error.get()}</p>
+                            </Show>
+                            <button type="button" disabled=move || state.saving.get()==SaveState::Saving
+                                on:click=move |_| state.flush()>
+                                {move || if state.saving.get()==SaveState::Saving {"Saving recovered checkpoint…"} else {"Use recovered checkpoint"}}
+                            </button>
+                            <button type="button" disabled=move || state.saving.get()==SaveState::Saving
+                                on:click=move |_| back.run(())>"Back to Ellipse"</button>
+                        </main>
+                    </Show>
                 }>
                     <main class="notes-empty">
-                        <h1>"Recover Notes"</h1>
-                        <p>"Notes found a recoverable checkpoint. Save it before editing documents."</p>
-                        <Show when=move || state.saving.get()==SaveState::Error>
-                            <p role="alert">{move || state.error.get()}</p>
-                        </Show>
-                        <button type="button" disabled=move || state.saving.get()==SaveState::Saving
-                            on:click=move |_| state.flush()>
-                            {move || if state.saving.get()==SaveState::Saving {"Saving recovered checkpoint…"} else {"Use recovered checkpoint"}}
-                        </button>
-                        <button type="button" disabled=move || state.saving.get()==SaveState::Saving
+                        <h1>"Restore Notes from a backup"</h1>
+                        <p>"No readable checkpoint was found. Restore a vault backup to open Notes on this device."</p>
+                        <library::RestoreBackup state status=restore_status on_restored=Callback::new(move |snapshot:io::Snapshot|batch(||{
+                            state.head.set(snapshot.head);
+                            state.vault.set(snapshot.vault);
+                            state.restore_required.set(false);
+                        }))/>
+                        <p role="status">{move ||restore_status.get()}</p>
+                        <button type="button" disabled=move ||state.maintenance.get()
                             on:click=move |_| back.run(())>"Back to Ellipse"</button>
                     </main>
                 </Show>

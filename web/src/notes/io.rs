@@ -74,6 +74,8 @@ pub struct Snapshot {
     pub head: u32,
     pub vault: Vault,
     pub recovered: bool,
+    #[serde(default)]
+    pub restore_required: bool,
 }
 
 pub async fn result(promise: Promise) -> Result<JsValue, String> {

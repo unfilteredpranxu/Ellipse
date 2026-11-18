@@ -21,6 +21,7 @@ pub struct Snapshot {
     pub head: u32,
     pub vault: Vault,
     pub recovered: bool,
+    pub restore_required: bool,
 }
 
 #[derive(Deserialize)]
@@ -73,28 +74,65 @@ impl Store {
         let mut db = self.open()?;
         let tx = sqlite(db.transaction())?;
         let snapshot = Self::committed(&tx)?;
-        let pending = sqlite(
-            tx.query_row(
-                "SELECT payload, digest FROM pending WHERE base=?1
-             AND typeof(payload)='blob' AND length(payload)<=?2
-             AND typeof(digest)='text' AND length(CAST(digest AS BLOB))=64",
-                params![snapshot.head, MAX_STATE],
-                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
-            )
-            .optional(),
-        )?;
-        if let Some((payload, digest)) = pending
-            && hash(&payload) == digest
-            && let Ok(vault) = serde_json::from_slice::<Vault>(&payload)
-            && vault.validate().is_ok()
-        {
+        if let Some(vault) = Self::pending(&tx, snapshot.head)? {
             return Ok(Snapshot {
                 head: snapshot.head,
                 vault,
                 recovered: true,
+                restore_required: false,
+            });
+        }
+        if !snapshot.restore_required && Self::has_pending(&tx, snapshot.head)? {
+            return Ok(Snapshot {
+                recovered: true,
+                ..snapshot
             });
         }
         Ok(snapshot)
+    }
+
+    fn has_pending(db: &Connection, head: u32) -> Result<bool> {
+        sqlite(db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pending WHERE base=?1)",
+            [head],
+            |row| row.get(0),
+        ))
+    }
+
+    fn pending(db: &Connection, head: u32) -> Result<Option<Vault>> {
+        let row = sqlite(
+            db.query_row(
+                "SELECT payload, CAST(digest AS BLOB) FROM pending WHERE base=?1
+             AND typeof(payload)='blob' AND length(payload)<=?2
+             AND typeof(digest)='text' AND length(CAST(digest AS BLOB))=64",
+                params![head, MAX_STATE],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional(),
+        )?;
+        if let Some((payload, digest)) = row {
+            return Self::decode_checkpoint(&payload, &digest);
+        }
+        Ok(None)
+    }
+
+    fn decode_checkpoint(payload: &[u8], digest: &[u8]) -> Result<Option<Vault>> {
+        if hash(payload).as_bytes() != digest {
+            return Ok(None);
+        }
+        match serde_json::from_slice::<Vault>(payload) {
+            Ok(vault) if vault.schema > SCHEMA => {
+                Err("These Notes require a newer version of Ellipse.".into())
+            }
+            Ok(vault) if vault.validate().is_ok() => Ok(Some(vault)),
+            Err(_)
+                if serde_json::from_slice::<CheckpointVersion>(payload)
+                    .is_ok_and(|version| version.schema > SCHEMA) =>
+            {
+                Err("These Notes require a newer version of Ellipse.".into())
+            }
+            _ => Ok(None),
+        }
     }
 
     fn committed(db: &Connection) -> Result<Snapshot> {
@@ -115,38 +153,20 @@ impl Store {
             let (Some(data), Some(digest)) = (data, digest) else {
                 continue;
             };
-            if hash(&data).as_bytes() != digest {
-                continue;
+            if let Some(vault) = Self::decode_checkpoint(&data, &digest)? {
+                return Ok(Snapshot {
+                    head,
+                    vault,
+                    recovered: revision != head,
+                    restore_required: false,
+                });
             }
-            match serde_json::from_slice::<Vault>(&data) {
-                Ok(vault) if vault.schema > SCHEMA => {
-                    return Err("These Notes require a newer version of Ellipse.".into());
-                }
-                Ok(vault) if vault.validate().is_ok() => {
-                    return Ok(Snapshot {
-                        head,
-                        vault,
-                        recovered: revision != head,
-                    });
-                }
-                Err(_)
-                    if serde_json::from_slice::<CheckpointVersion>(&data)
-                        .is_ok_and(|version| version.schema > SCHEMA) =>
-                {
-                    return Err("These Notes require a newer version of Ellipse.".into());
-                }
-                _ => {}
-            }
-        }
-        if head.is_some() {
-            return Err(
-                "Notes could not recover a valid checkpoint. The database was preserved.".into(),
-            );
         }
         Ok(Snapshot {
-            head: 0,
+            head: head.unwrap_or(0),
             vault: Vault::default(),
             recovered: false,
+            restore_required: head.is_some(),
         })
     }
 
@@ -212,6 +232,9 @@ impl Store {
     ) -> Result<()> {
         Self::check_head(db, head)?;
         Self::check_pdfs(db, vault)?;
+        if Self::has_pending(db, head)? && Self::pending(db, head)?.is_none() {
+            sqlite(db.execute("DELETE FROM pending WHERE base=?1", [head]))?;
+        }
         let inserted = sqlite(db.execute(
             "INSERT OR IGNORE INTO pending VALUES (?1, ?2, ?3)",
             params![head, payload, digest],

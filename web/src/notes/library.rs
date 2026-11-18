@@ -638,39 +638,56 @@ fn VaultBackup(state: NotesState, settings: LibraryView) -> impl IntoView {
                         let _=status.try_set(result.map(|path|format!("Vault backup saved to {path}")).unwrap_or_else(|error|error));
                     });
                 }>"Save vault backup"</button>
-            <label class="notes-file">"Restore vault backup"
-                <input type="file" accept=".ellipsevault" disabled=move ||!state.ready() || state.maintenance.get()
-                    on:change=move |event|{
-                        let Some(file)=picked_file(&event) else{return};
-                        if !state.ready() || state.maintenance.get_untracked(){return;}
-                        if !window().confirm_with_message("Replace this device’s Notes vault with the selected backup? Save a backup of your current vault first if you want to keep it.").unwrap_or(false){return;}
-                        state.maintenance.set(true);
-                        let head=state.head.get_untracked();
-                        spawn_local(async move {
-                            let result=io::typed::<io::Snapshot>(io::restore_notes(head,&file)).await;
-                            if state.maintenance.try_set(false).is_some(){return;}
-                            match result {
-                                Ok(snapshot)=>batch(||{
-                                    state.head.set(snapshot.head);
-                                    state.selected.set(None);
-                                    state.history.update_value(|history|*history=Default::default());
-                                    state.pdfs.update_value(|cache|cache.clear());
-                                    state.vault.set(snapshot.vault);
-                                    settings.filter.set(Filter::All);
-                                    settings.folder.set(None);
-                                    settings.subject.set(String::new());
-                                    settings.collection.set(String::new());
-                                    settings.query.set(String::new());
-                                    settings.scroll.set(0.);
-                                    let _=status.try_set("Notes vault restored.".into());
-                                }),
-                                Err(error)=>{let _=status.try_set(error);}
-                            }
-                        });
-                    }/>
-            </label>
+            <RestoreBackup state status on_restored=Callback::new(move |snapshot:io::Snapshot|batch(||{
+                state.head.set(snapshot.head);
+                state.selected.set(None);
+                state.history.update_value(|history|*history=Default::default());
+                state.pdfs.update_value(|cache|cache.clear());
+                state.vault.set(snapshot.vault);
+                settings.filter.set(Filter::All);
+                settings.folder.set(None);
+                settings.subject.set(String::new());
+                settings.collection.set(String::new());
+                settings.query.set(String::new());
+                settings.scroll.set(0.);
+                let _=status.try_set("Notes vault restored.".into());
+            }))/>
             <p role="status">{move ||status.get()}</p>
         </details>
+    }
+}
+
+#[component]
+pub(super) fn RestoreBackup(
+    state: NotesState,
+    status: RwSignal<String>,
+    on_restored: Callback<io::Snapshot>,
+) -> impl IntoView {
+    view! {
+        <label class="notes-file">"Restore vault backup"
+            <input type="file" accept=".ellipsevault" disabled=move ||!state.ready() || state.maintenance.get()
+                on:change=move |event|{
+                    let Some(file)=picked_file(&event) else{return};
+                    if !state.ready() || state.maintenance.get_untracked(){return;}
+                    let prompt=if state.restore_required.get_untracked(){
+                        "Restore the selected backup and open it as this device’s Notes vault?"
+                    } else {
+                        "Replace this device’s Notes vault with the selected backup? Save a backup of your current vault first if you want to keep it."
+                    };
+                    if !window().confirm_with_message(prompt).unwrap_or(false){return;}
+                    status.set("Restoring Notes…".into());
+                    state.maintenance.set(true);
+                    let head=state.head.get_untracked();
+                    spawn_local(async move {
+                        let result=io::typed::<io::Snapshot>(io::restore_notes(head,&file)).await;
+                        if state.maintenance.try_set(false).is_some(){return;}
+                        match result {
+                            Ok(snapshot)=>on_restored.run(snapshot),
+                            Err(error)=>{let _=status.try_set(error);}
+                        }
+                    });
+                }/>
+        </label>
     }
 }
 

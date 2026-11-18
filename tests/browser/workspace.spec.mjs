@@ -530,8 +530,8 @@ test("authenticated web Notes only reads explicitly opened local PDFs", async ({
   await expect(page.getByRole("button",{name:"Field notes",exact:true})).toHaveCount(0);
 });
 
-async function stubNotesBridge(page, fixtures = false, recover = false) {
-  await page.addInitScript(({seed,recover}) => {
+async function stubNotesBridge(page, fixtures = false, recover = false, restoreRequired = false) {
+  await page.addInitScript(({seed,recover,restoreRequired}) => {
     const colors=[[109,51,42],[89,79,64],[42,66,91],[148,116,77],[42,65,56],[97,64,75],[40,62,76]];
     function initial() {
       let next=1;
@@ -545,7 +545,7 @@ async function stubNotesBridge(page, fixtures = false, recover = false) {
     }
     window.__TAURI_INTERNALS__={invoke:async (command,args)=>{
       const key="qa-notes";
-      const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:recover?7:0,vault:initial(),recovered:recover};
+      const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:recover||restoreRequired?7:0,vault:initial(),recovered:recover,restore_required:restoreRequired};
       if (command==="notes_load") return previous;
       if (command==="notes_backup") {
         if (args.head!==previous.head) throw Error("Revision conflict.");
@@ -596,7 +596,7 @@ async function stubNotesBridge(page, fixtures = false, recover = false) {
       }
       throw Error("Unknown test bridge command.");
     }};
-  },{seed:fixtures,recover});
+  },{seed:fixtures,recover,restoreRequired});
 }
 
 async function openLocalNotes(page) {
@@ -924,6 +924,30 @@ test("native Notes vault controls confirm restore and preserve the library on fa
   await page.reload();
   await openLocalNotes(page);
   await expect(page.getByRole("heading",{name:"Your shelf is empty",exact:true})).toBeVisible();
+});
+
+test("native Notes restores an unreadable vault from the recovery screen",async({page})=>{
+  await stubNotesBridge(page,false,false,true);
+  await page.goto("/");
+  await page.getByRole("button",{name:"Open Notes on this device"}).click();
+  await expect(page.getByRole("heading",{name:"Restore Notes from a backup"})).toBeVisible();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  await expect(page.getByText("Saved on this device",{exact:true})).toHaveCount(0);
+
+  const chooser=page.getByLabel("Restore vault backup",{exact:true});
+  const file={name:"fixture.ellipsevault",mimeType:"application/octet-stream",buffer:Buffer.from("truncated")};
+  page.once("dialog",dialog=>dialog.accept());
+  await chooser.setInputFiles(file);
+  await expect(page.getByRole("status")).toHaveText("Invalid fixture backup.");
+  await expect(notesLibrary(page)).toHaveCount(0);
+
+  const vault={schema:1,next:1,books:[],folders:[],study:{active:null,history:[]},dark:false};
+  page.once("dialog",dialog=>dialog.accept());
+  await chooser.setInputFiles({...file,buffer:Buffer.from(JSON.stringify(vault))});
+  await expect(notesLibrary(page)).toBeVisible();
+  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();
+  await page.reload();
+  await openLocalNotes(page);
 });
 
 test("notebook PDF export preserves page stationery and individual pattern colors",async({page},info)=>{

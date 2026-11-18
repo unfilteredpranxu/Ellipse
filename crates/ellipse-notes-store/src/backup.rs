@@ -145,7 +145,7 @@ impl Store {
         let tx = sqlite(db.transaction())?;
         Self::check_head(&tx, head)?;
         let snapshot = Self::committed(&tx)?;
-        if snapshot.recovered || Self::has_pending(&tx, head)? {
+        if snapshot.restore_required || snapshot.recovered || Self::has_pending(&tx, head)? {
             return Err("Recover Notes before creating a backup.".into());
         }
         let mut out = MAGIC.to_vec();
@@ -175,15 +175,8 @@ impl Store {
             head,
             vault,
             recovered: false,
+            restore_required: false,
         })
-    }
-
-    fn has_pending(db: &Connection, head: u32) -> Result<bool> {
-        sqlite(db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM pending WHERE base=?1)",
-            [head],
-            |row| row.get(0),
-        ))
     }
 
     fn restore_validated(
@@ -196,7 +189,9 @@ impl Store {
     ) -> Result<u32> {
         let tx = sqlite(db.transaction_with_behavior(TransactionBehavior::Immediate))?;
         Self::check_head(&tx, head)?;
-        if Self::has_pending(&tx, head)? {
+        // Reject newer-format data and protect a recoverable edit before changing anything.
+        Self::committed(&tx)?;
+        if Self::pending(&tx, head)?.is_some() {
             return Err("Recover pending Notes edits before restoring a backup.".into());
         }
         for (kind, id) in references(vault) {
@@ -388,5 +383,55 @@ mod tests {
         assert_ne!(path, second);
         assert_eq!(fs::read(path).unwrap(), b"original");
         assert_eq!(fs::read(second).unwrap(), b"next");
+    }
+
+    #[test]
+    fn restore_from_unreadable_checkpoints_checks_the_observed_revision() {
+        let root = tempfile::tempdir().unwrap();
+        let original = Store::new(&root.path().join("source")).unwrap();
+        let artwork = root.path().join("artwork");
+        let (vault, _, archive) = fixture(&original, &artwork);
+        let target = Store::new(&root.path().join("target")).unwrap();
+        target.save(0, &Vault::default()).unwrap();
+        let db = target.open().unwrap();
+        db.execute("UPDATE snapshots SET payload=x'00'", [])
+            .unwrap();
+        let unreadable = target.load().unwrap();
+        assert_eq!(unreadable.head, 1);
+        assert!(unreadable.restore_required);
+        assert!(!unreadable.recovered);
+        assert!(target.backup(unreadable.head, &artwork).is_err());
+        assert!(target.restore(1, &artwork, &archive[..20]).is_err());
+        assert!(target.load().unwrap().restore_required);
+
+        let staged = Store::encode(&vault).unwrap();
+        db.execute(
+            "INSERT INTO pending VALUES (1, ?1, ?2)",
+            params![staged, hash(&staged)],
+        )
+        .unwrap();
+        let recoverable = target.load().unwrap();
+        assert!(recoverable.recovered);
+        assert!(!recoverable.restore_required);
+        assert_eq!(recoverable.vault, vault);
+        assert!(target.restore(1, &artwork, &archive).is_err());
+        db.execute("UPDATE pending SET payload=x'00' WHERE base=1", [])
+            .unwrap();
+        assert!(target.load().unwrap().restore_required);
+
+        let restored = target.restore(unreadable.head, &artwork, &archive).unwrap();
+        assert_eq!(restored.head, 2);
+        assert_eq!(target.load().unwrap().vault, vault);
+        assert!(!target.load().unwrap().restore_required);
+        assert!(target.restore(unreadable.head, &artwork, &archive).is_err());
+
+        let future = br#"{"schema":99}"#;
+        db.execute(
+            "INSERT INTO pending VALUES (2, ?1, ?2)",
+            params![future, hash(future)],
+        )
+        .unwrap();
+        assert!(target.load().is_err());
+        assert!(target.restore(2, &artwork, &archive).is_err());
     }
 }
