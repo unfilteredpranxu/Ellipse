@@ -1,0 +1,15 @@
+{
+  "name": "ellipse-native",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite ../site --host 127.0.0.1",
+    "build": "node scripts/build-frontend.mjs",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "vite": "^7.0.0"
+  }
+}
