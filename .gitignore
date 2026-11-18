@@ -1,0 +1,10 @@
+# Never commit secrets, tokens, or local credentials
+.env
+.env.*
+!.env.example
+node_modules/
+target/
+dist/
+.DS_Store
+*.log
+.native-cache/
