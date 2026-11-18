@@ -1,33 +1,53 @@
-
-:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;background:#030303;color:#f6f6f6}
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;color-scheme:light;background:#000;color:#111}
 *{box-sizing:border-box}
-html,body{min-height:100%;margin:0}
+html,body{margin:0;min-height:100%;width:100%}
 button{font:inherit;cursor:pointer}
-button:focus-visible{outline:2px solid #fff;outline-offset:5px}
-.screen{position:relative;width:100%;min-height:100svh;min-height:100dvh;overflow:hidden;isolation:isolate;background:radial-gradient(ellipse at 50% 25%,#181818,#030303 75%)}
-.hero-wrap{position:absolute;inset:0;z-index:-2;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.hero-art{display:block;width:100%;height:100%;object-fit:cover;object-position:center 37%;filter:contrast(1.04);-webkit-user-select:none;user-select:none;pointer-events:none}
-.screen::after{content:"";z-index:-1;pointer-events:none;position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.18) 0%,transparent 24%,transparent 44%,rgba(0,0,0,.96) 57%,#030303 63%)}
-.topbar{position:absolute;top:0;left:0;right:0;z-index:2;padding:calc(env(safe-area-inset-top) + 24px) clamp(22px,4vw,58px) 0;display:flex;align-items:center;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:10px;color:#f3f3f3;font-size:19px;line-height:1;font-weight:660;letter-spacing:-.75px}
-.brand-mark{display:grid;place-items:center;width:31px;height:31px;border:1px solid rgba(255,255,255,.58);border-radius:9px;background:rgba(14,14,14,.56);box-shadow:inset 0 1px rgba(255,255,255,.13);backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
-.brand-mark::after{content:"";width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #f9f9f9;transform:translateY(-1px)}
-.topbar .edition{font-size:10px;font-weight:590;letter-spacing:.23em;color:rgba(255,255,255,.56);text-transform:uppercase}
-.bottom{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;flex-direction:column;align-items:center;padding:30px clamp(20px,6vw,72px) calc(env(safe-area-inset-bottom) + 27px);gap:15px}
-.signin-button{width:min(100%,410px);min-height:58px;display:flex;align-items:center;justify-content:center;gap:13px;border:1px solid rgba(255,255,255,.30);border-radius:19px;color:#fff;background:rgba(34,34,34,.54);backdrop-filter:blur(30px) saturate(135%);-webkit-backdrop-filter:blur(30px) saturate(135%);box-shadow:inset 0 1px rgba(255,255,255,.11),0 12px 45px rgba(0,0,0,.38);font-size:15px;font-weight:560;letter-spacing:-.17px;transition:background .18s ease,border-color .18s ease,transform .18s ease}
-.signin-button:hover{background:rgba(58,58,58,.64);border-color:rgba(255,255,255,.5)}
-.signin-button:active{transform:scale(.985)}
-.google-mark{display:block;width:21px;height:21px;flex:none}
-.notice{margin:0;max-width:410px;color:#fff;font-size:12px;font-weight:450;line-height:1.5;text-align:center;text-shadow:0 1px 4px #000}
+button:focus-visible{outline:2px solid #4f74cf;outline-offset:4px}
+.screen{display:grid;grid-template-columns:minmax(0,41.25fr) minmax(0,58.75fr);min-height:100vh;min-height:100dvh;background:#000;overflow:hidden;isolation:isolate}
+.hero-wrap{position:relative;grid-column:2;grid-row:1;min-width:0;overflow:hidden;background:#000}
+.hero-art{display:block;width:100%;height:100%;min-height:100%;object-fit:cover;object-position:50% 49%;user-select:none;-webkit-user-select:none;pointer-events:none}
+.welcome-pane{position:relative;grid-column:1;grid-row:1;z-index:1;display:flex;flex-direction:column;padding:0 clamp(30px,5.65vw,104px);background:#fafafa;color:#111;min-width:0}
+.topbar{margin-top:clamp(68px,26.5vh,340px)}
+.brand{display:flex;align-items:center;gap:13px;font-size:clamp(20px,1.85vw,27px);font-weight:710;letter-spacing:-.06em}
+.brand-mark{display:grid;place-items:center;width:46px;height:46px;flex:none;background:#0d0d0d;border-radius:12px}
+.brand-mark::after{content:"";width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:24px solid #fff;transform:translateY(-1px)}
+.welcome-copy{margin-top:clamp(50px,7.4vh,120px)}
+.welcome-copy h1{margin:0;font-size:clamp(31px,3.25vw,54px);font-weight:730;letter-spacing:-.058em;line-height:1.1}
+.welcome-copy p{margin:22px 0 0;color:#777;font-size:clamp(14px,1.42vw,20px);line-height:1.5;letter-spacing:-.02em}
+.bottom{width:100%;margin-top:auto;margin-bottom:clamp(40px,7.3vh,106px);display:flex;flex-direction:column;align-items:stretch;gap:12px}
+.signin-button{width:100%;min-height:72px;display:flex;align-items:center;justify-content:center;gap:15px;border:1px solid #d3d3d3;border-radius:15px;background:#fafafa;color:#111;font-size:16px;font-weight:620;letter-spacing:-.023em;box-shadow:none;transition:background .18s,border-color .18s,transform .18s}
+.signin-button:hover{background:#f0f0f0;border-color:#a7a7a7}
+.signin-button:active{transform:scale(.986)}
+.google-mark{display:block;width:26px;height:26px;flex:none}
+.notice{margin:0;color:#666;font-size:12px;line-height:1.45;text-align:center}
 .notice:empty{display:none}
-.notice.error{background:rgba(40,10,10,.68);padding:10px 14px;border-radius:12px;backdrop-filter:blur(12px)}
-.signed-in{width:min(100%,410px);padding:14px 17px;display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid rgba(255,255,255,.25);background:rgba(23,23,23,.65);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-radius:18px}
-.account-name{font-size:14px;font-weight:620;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-.account-label{margin-top:4px;font-size:11px;color:#bcbcbc}
-.signout{flex:none;color:#fff;font-size:12px;padding:10px 12px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);border-radius:10px}
-.sr-only{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;overflow:hidden}
-@media(min-width:780px){.hero-art{width:min(80vw,850px);height:100%;object-fit:cover;object-position:center 42%;mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%)}.bottom{padding-bottom:55px}.signin-button{min-height:62px}.screen::after{background:linear-gradient(180deg,rgba(0,0,0,.13),transparent 43%,rgba(0,0,0,.96) 58%,#030303 65%)}}
-@media(max-width:390px){.topbar{padding-top:calc(env(safe-area-inset-top) + 19px)}.bottom{padding-bottom:calc(env(safe-area-inset-bottom) + 22px)}.signin-button{min-height:54px;border-radius:16px}}
-@media(prefers-reduced-motion:reduce){.signin-button{transition:none}}
-
+.signed-in{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:16px;border:1px solid #d1d1d1;border-radius:15px;min-width:0}
+.account-name{font-weight:630;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-label{font-size:11px;color:#777;margin-top:5px}
+.signout{border:1px solid #ccc;border-radius:10px;background:#fff;padding:10px 12px;white-space:nowrap}
 [hidden]{display:none!important}
+@media (max-width: 700px), (max-height: 520px) and (pointer: coarse){
+  :root{color-scheme:dark;background:#000;color:#fff}
+  .screen{display:block;position:relative;min-height:100svh;min-height:100dvh}
+  .hero-wrap{position:absolute;inset:0}
+  .hero-art{width:100%;height:100%;object-position:50% 46%;filter:none}
+  .welcome-pane{position:relative;z-index:1;display:block;width:100%;height:100svh;height:100dvh;min-height:0;padding:0;background:transparent;color:#fff;pointer-events:none}
+  .topbar,.welcome-copy{display:none}
+  .bottom{position:absolute;bottom:0;left:0;right:0;margin:0;padding:16px clamp(20px,6vw,40px) calc(27px + env(safe-area-inset-bottom));align-items:center;pointer-events:auto}
+  .signin-button{width:min(100%,410px);min-height:59px;border:1px solid rgba(255,255,255,.31);border-radius:18px;background:rgba(28,28,28,.44);color:#fff;box-shadow:inset 0 1px rgba(255,255,255,.14),0 12px 30px rgba(0,0,0,.35);backdrop-filter:blur(26px) saturate(130%);-webkit-backdrop-filter:blur(26px) saturate(130%);font-size:15px}
+  .signin-button:hover{background:rgba(40,40,40,.62);border-color:rgba(255,255,255,.5)}
+  .google-mark{width:23px;height:23px}
+  .notice{max-width:410px;color:#fff;text-shadow:0 1px 8px #000}
+  .signed-in{width:min(100%,410px);color:#fff;background:rgba(28,28,28,.48);border:1px solid rgba(255,255,255,.29);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+  .account-label{color:#ddd}
+  .signout{color:#fff;border-color:rgba(255,255,255,.27);background:rgba(255,255,255,.09)}
+}
+@media (min-width: 701px) and (max-width: 1050px){
+  .welcome-pane{padding-inline:clamp(24px,4vw,50px)}
+  .topbar{margin-top:clamp(80px,25vh,300px)}
+  .brand-mark{width:38px;height:38px;border-radius:10px}
+  .brand-mark::after{border-left-width:11px;border-right-width:11px;border-bottom-width:20px}
+  .signin-button{min-height:63px}
+  .welcome-copy p{margin-top:15px}
+}
+@media(prefers-reduced-motion:reduce){.signin-button{transition:none}}
