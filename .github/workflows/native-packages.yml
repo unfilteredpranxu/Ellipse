@@ -146,12 +146,34 @@ jobs:
           test -n "$app"
           /usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$app/Info.plist" | grep -qx true
           ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/ellipse-ios-simulator.zip"
+          printf 'ELLIPSE_SIM_APP=%s/%s\n' "$PWD" "$app" >> "$GITHUB_ENV"
       - name: Build an unsigned iPhone and iPad IPA
         run: |
           npm run tauri -- ios build --ci --no-sign --target aarch64
           ipa=$(find src-tauri/gen/apple/build/arm64 -name '*.ipa' -type f -print -quit)
           test -n "$ipa"
+          verification=$(mktemp -d)
+          unzip -q "$ipa" -d "$verification"
+          app=$(find "$verification/Payload" -maxdepth 1 -name '*.app' -type d -print -quit)
+          test -n "$app"
+          plist="$app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = app.ellipse.workspace
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          file "$app/$executable" | grep -q arm64
+          test ! -f "$app/embedded.mobileprovision"
           cp "$ipa" "$RUNNER_TEMP/ellipse-ios-device-unsigned.ipa"
+      - name: Launch the packaged app on an available Simulator
+        if: ${{ !cancelled() && env.ELLIPSE_SIM_APP != '' }}
+        run: |
+          device=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=[d for group in json.load(sys.stdin)["devices"].values() for d in group if d["name"].startswith(("iPad","iPhone"))]; print(next((d["udid"] for d in devices if d["name"].startswith("iPad")), devices[0]["udid"] if devices else ""))')
+          if [ -z "$device" ]; then
+            echo "::warning::No iOS Simulator device was available for the launch check."
+            exit 0
+          fi
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$ELLIPSE_SIM_APP"
+          xcrun simctl launch "$device" app.ellipse.workspace
       - uses: actions/upload-artifact@v4
         if: always()
         with:

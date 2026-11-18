@@ -229,3 +229,48 @@
 .notes-text-fields {display:grid;gap:9px;}
 .notes-text-fields label {display:grid;gap:4px;}
 .notes-text-fields .notes-checkbox {display:flex;}
+
+/* Calendar, Focus and Study are separate pages that share the local vault. */
+.workspace-planner-links,.local-tools {display:flex;flex-wrap:wrap;justify-content:center;gap:4px;}
+.local-tools button {min-height:44px;background:none;color:inherit;border:1px solid #575450;border-radius:8px;padding:0 12px;}
+.planner-page {min-height:100dvh;overflow-wrap:anywhere;}
+.planner-nav {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;padding:12px max(18px,env(safe-area-inset-left));border-bottom:1px solid var(--line);font-family:system-ui,sans-serif;}
+.planner-nav nav,.planner-controls {display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+.planner-save {font-size:.84rem;color:var(--quiet);}
+.planner-content {width:min(1220px,100%);margin:0 auto;padding:clamp(18px,4vw,54px);padding-bottom:max(28px,env(safe-area-inset-bottom));display:grid;gap:18px;}
+.planner-title,.planner-datebar {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;}
+.planner-page h1 {font:400 clamp(2.6rem,7vw,5rem)/1 Georgia,serif;letter-spacing:-.045em;}
+.planner-page h2,.planner-page h3,.planner-page h4 {font-family:Georgia,serif;font-weight:normal;}
+.planner-calendar-layout {display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:clamp(18px,4vw,48px);}
+.planner-calendar-layout > section {min-width:0;}
+.planner-grid {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin-top:12px;}
+.planner-weekday {font:.75rem system-ui,sans-serif;text-align:center;overflow:hidden;}
+.planner-grid button {display:flex;align-items:center;justify-content:space-between;min-width:0;min-height:44px;padding:5px;background:var(--paper);border:1px solid var(--line);font-variant-numeric:tabular-nums;}
+.planner-grid .other-month {color:var(--quiet);}
+.planner-task,.study-unit,.study-analytics,.exam-source-list article {padding:14px 0;border-top:1px solid var(--line);}
+.planner-form {display:grid;gap:12px;padding:16px;background:var(--paper);border:1px solid var(--line);}
+.planner-form fieldset {min-width:0;border:1px solid var(--line);}
+.planner-form-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.planner-form label,.focus-setup label {display:grid;gap:4px;min-width:0;}
+.planner-page .planner-check {display:flex;align-items:center;gap:8px;min-height:44px;}
+.planner-task-meta {color:var(--quiet);font-size:.9rem;}
+.exam-source-list {display:flex;flex-wrap:wrap;gap:clamp(16px,4vw,44px);margin:12px 0;}
+.exam-source-list a {display:inline-flex;min-height:44px;align-items:center;color:inherit;}
+.study-topics,.study-analytics {display:grid;gap:12px;}
+.study-analytics dl div {display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid var(--line);}
+.focus-room {min-height:calc(100svh - 84px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;width:min(690px,100%);padding:clamp(14px,5vw,44px);margin:auto;}
+.focus-room .notes-timer,.focus-preview {font:400 clamp(2.5rem,12vw,7.5rem)/1.18 Georgia,serif;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.045em;}
+.focus-preview {color:var(--quiet);}
+.focus-controls {justify-content:center;}
+.focus-setup {display:grid;gap:10px;width:100%;}
+.focus-setup > label {max-width:340px;width:100%;margin-inline:auto;}
+.focus-links {text-align:left;}
+@media (max-width:760px) {
+  .planner-calendar-layout {grid-template-columns:minmax(0,1fr);}
+  .planner-grid button {flex-direction:column;justify-content:center;}
+  .workspace-planner-links {grid-column:1/-1;}
+}
+@media (max-width:390px) {
+  .planner-form-grid {grid-template-columns:minmax(0,1fr);}
+  .planner-grid button {padding:3px;}
+}

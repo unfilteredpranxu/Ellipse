@@ -1,7 +1,7 @@
 use super::appearance::{AppearancePanel, ImageChoice, LocalPicture};
 use super::{NotesState, SaveIndicator, attach_pdf, io, now, study::StudyPanel};
 use crate::settings::parse_color;
-use ellipse_core::notes::{LocalImage, NotebookFile, SCHEMA};
+use ellipse_core::notes::{LocalImage, NOTEBOOK_SCHEMA, NotebookFile};
 use ellipse_core::{
     artwork::Color,
     notes::{Book, Cover, Disposition, Id, MAX_STATE, Paper, Template, Vault, label},
@@ -356,7 +356,7 @@ pub fn Library(state: NotesState, settings: LibraryView, back: Callback<()>) -> 
                     .ok_or("The notebook could not be read.")?;
                 let file: NotebookFile = serde_json::from_str(&text)
                     .map_err(|_| "This is not a supported Ellipse notebook backup.")?;
-                if file.version != SCHEMA {
+                if file.version != NOTEBOOK_SCHEMA {
                     return Err("This notebook needs a newer version of Ellipse.");
                 }
                 let mut book = file.notebook;

@@ -1,5 +1,6 @@
 mod ink;
 mod paper;
+pub mod planner;
 mod study;
 
 use crate::artwork::{valid_asset_id, Color, Frame};
@@ -8,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub use study::*;
 
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
+pub const NOTEBOOK_SCHEMA: u32 = 1;
 pub const MAX_PDF: usize = 24 * 1024 * 1024;
 pub const MAX_STATE: usize = 32 * 1024 * 1024;
 pub type Id = u32;
@@ -168,6 +170,8 @@ pub struct Vault {
     pub books: Vec<Book>,
     pub folders: Vec<Folder>,
     pub study: Study,
+    #[serde(default, skip_serializing_if = "planner::Planner::is_default")]
+    pub planner: planner::Planner,
     pub dark: bool,
     #[serde(default)]
     pub appearance: LibraryAppearance,
@@ -218,6 +222,7 @@ impl Default for Vault {
             books: vec![],
             folders: vec![],
             study: Study::default(),
+            planner: planner::Planner::default(),
             dark: false,
             appearance: LibraryAppearance::default(),
         }
@@ -326,7 +331,9 @@ impl Vault {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.schema != SCHEMA
+        if !(1..=SCHEMA).contains(&self.schema)
+            || (self.schema == 1
+                && (!self.planner.is_default() || self.study.has_extended_fields()))
             || self.next == u32::MAX
             || self.folders.len() > 4096
             || self.books.len() > 4096
@@ -411,6 +418,7 @@ impl Vault {
                 }
             }
         }
+        self.planner.validate()?;
         self.study.validate()
     }
 }

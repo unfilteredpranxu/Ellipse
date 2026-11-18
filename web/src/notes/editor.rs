@@ -8,7 +8,7 @@ use crate::settings::parse_color;
 use ellipse_core::notes::{
     Id, Nib, Page, Pen, Point, Stroke, Template, Text, clip_disc, lasso_hits, transform,
 };
-use ellipse_core::notes::{NotebookFile, SCHEMA};
+use ellipse_core::notes::{NOTEBOOK_SCHEMA, NotebookFile};
 use leptos::{html, prelude::*};
 use std::{collections::BTreeSet, rc::Rc};
 use wasm_bindgen_futures::spawn_local;
@@ -578,7 +578,7 @@ pub fn Editor(state: NotesState, id: Id) -> impl IntoView {
                                 if let Some(mut book)=state.vault.with_untracked(|v|v.book(id).cloned()){
                                     book.cover_art=None;
                                     let name=format!("{}.ellipse.json",book.title);
-                                    if let Ok(json)=serde_json::to_string_pretty(&NotebookFile{version:SCHEMA,notebook:book}){
+                                    if let Ok(json)=serde_json::to_string_pretty(&NotebookFile{version:NOTEBOOK_SCHEMA,notebook:book}){
                                         io::download_notebook(&json,&name);
                                     }
                                 }

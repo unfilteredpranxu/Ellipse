@@ -8,7 +8,7 @@ The installed app offers **Open Notes on this device** at its signed-out screen.
 
 ## Data format and recovery
 
-- Portable Rust model in `ellipse-core/src/notes/`. Vault schema 1 uses stable unsigned identifiers covering notebooks, folders, pages, text boxes and strokes. Independent dimensions and paper attributes live on each page. Stroke points are in top-left-origin document space. Each sample records position, normalized pressure, tilt magnitude and azimuth derived from pointer events.
+- Portable Rust model in `ellipse-core/src/notes/`. Vault schema 2 includes productivity data and reads legacy schema 1. The vault uses stable unsigned identifiers covering notebooks, folders, pages, text boxes and strokes. Independent dimensions and paper attributes live on each page. Stroke points are in top-left-origin document space. Each sample records position, normalized pressure, tilt magnitude and azimuth derived from pointer events.
 - SQLite schema 2 in `notes/device/notes.sqlite3` under Tauri's local app data directory. Initialization and the schema 1 upgrade use an immediate transaction, WAL and FULL synchronous mode. Snapshots contain typed JSON with SHA-256 digests, monotonic revisions, and up to four checkpoints. Future database and Vault versions are rejected. Commits validate IDs, parentage, geometry and referenced PDF assets before writing.
 - Completed edits are serialized in the WebView. Native saves first commit a pending payload with the exact base revision, then promote it to a checkpoint in a second transaction. Promotion removes the pending payload atomically. Reopening after an interrupted promotion offers to recover the pending payload only if its checksum and base revision match. A retry of the same already-committed payload returns the existing revision. The library unlocks and **Saved on this device** appears only after acknowledgment.
 - Background suspension has no guaranteed flush deadline. Sampled ink can be committed on a delivered pointer interruption, while cancelled erasing and shape gestures are discarded. Force termination before the native pending transaction commits can still lose the stroke or edit. Edits queued in the WebView behind an in-flight save can also be lost. Out-of-space errors keep the in-memory edit available for retry while the app stays open.
@@ -34,9 +34,9 @@ PDF.js renders selected pages at a bounded backing resolution. PDF search lists 
 
 Study controls begin hidden in the editor. Sessions save wall-clock interval boundaries and can be paused, resumed, hidden or finished independently of display. A restarted active timer reconstructs elapsed time from persisted intervals and applies preset caps. The library shows completed daily, weekly, monthly and subject totals. Totals split completed intervals at the device's local calendar boundaries. Background time counts as recorded elapsed time. This version has no idle detection or reliable correction for manual clock changes.
 
-### Future Calendar contract
+### Calendar, Focus and Study
 
-Read completed sessions as a projection of `Vault.study.history`. Each record exposes subject, optional stable notebook ID, UTC epoch milliseconds for start and finish, and an ordered list of half-open active intervals. Query display totals by intersecting the active intervals with the requested timezone's calendar boundaries using `Session::milliseconds_in`. Calendar clients should retain source UTC values when users change timezone. The current format keeps all records in the local store and exposes no sync endpoint.
+These are distinct workspace pages backed by the native vault. The browser planner uses a separate Firebase-UID-scoped local record. Notes authoring stays native. Calendar day, week and month views project civil-date tasks and UTC study intervals. The same active session appears in Focus and the optional Notes timer. See the [planner data model](../study/CALENDAR_TASK_TIMER_SCHEMA.md) and [feature matrix](../study/FEATURE_MATRIX.md).
 
 ## Evidence and limitations
 
@@ -79,6 +79,6 @@ On a signed physical iPad build, use a disposable vault for these checks:
 
 ## Dependencies and design references
 
-OwlLuna was reviewed at `7ea2a8c7a4acb0f30541d778483d746b309b4dfa` (MIT, © 2024–2026 Owais Khan). No upstream implementation code, images, or typefaces were incorporated. Notes uses the owner's cream screenshot as a design comparison. The screenshot stays in the repository's private documentation.
+OwlLuna was reviewed at `7ea2a8c7a4acb0f30541d778483d746b309b4dfa` (MIT, © 2024–2026 Owais Khan). The portable lasso now adapts the straight-diagonal outline behavior from upstream. Its MIT notice ships with the web and native frontend. See [the source parity map](OWLLUNA_FEATURE_PARITY.md). Notes uses the owner's cream screenshot as a design comparison. The screenshot stays in the repository's private documentation.
 
 Pinned `pdfjs-dist` and `pdf-lib` packages are installed from the lockfile for the build. The bundled runtime includes upstream license notices and license files shipped with PDF.js resources. PDF.js scripting and eval are disabled. The original PDF files remain in local app storage or browser memory.

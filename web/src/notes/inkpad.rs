@@ -119,6 +119,7 @@ pub fn shape(stroke: &Stroke, tool: Tool) -> Stroke {
     let (_, _, dx, dy) = (first.x, first.y, last.x - first.x, last.y - first.y);
     let points = match tool {
         Tool::Line => vec![first, last],
+        Tool::Lasso => ellipse_core::notes::lasso_outline(&stroke.points),
         Tool::Rectangle | Tool::SelectBox => vec![
             first,
             point(last.x, first.y),

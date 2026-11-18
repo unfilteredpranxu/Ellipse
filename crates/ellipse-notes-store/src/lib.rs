@@ -370,6 +370,37 @@ mod tests {
     }
 
     #[test]
+    fn legacy_pending_payload_can_be_acknowledged_before_vault_upgrade() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path()).unwrap();
+        let mut legacy = Vault {
+            schema: 1,
+            ..Vault::default()
+        };
+        assert!(legacy.study.start("Physics", None, None, 1000));
+        let old = Store::encode(&legacy).unwrap();
+        let json = std::str::from_utf8(&old).unwrap();
+        assert!(!json.contains(r#""planner""#));
+        assert!(!json.contains(r#""kind""#));
+        store
+            .open()
+            .unwrap()
+            .execute(
+                "INSERT INTO pending VALUES (0, ?1, ?2)",
+                params![old, hash(&old)],
+            )
+            .unwrap();
+        let observed = store.load().unwrap();
+        assert!(observed.recovered);
+        assert_eq!(observed.vault, legacy);
+        assert_eq!(store.save(0, &observed.vault).unwrap(), 1);
+        legacy.schema = SCHEMA;
+        legacy.planner.weekly_goal_minutes = Some(240);
+        assert_eq!(store.save(1, &legacy).unwrap(), 2);
+        assert_eq!(store.load().unwrap().vault, legacy);
+    }
+
+    #[test]
     fn upgrades_the_existing_schema_without_replacing_notes() {
         let root = tempfile::tempdir().unwrap();
         let store = Store::new(root.path()).unwrap();
@@ -593,7 +624,7 @@ mod tests {
         assert_eq!(recovered.vault, vault);
 
         // A valid digest with a newer schema blocks recovery even if fields changed.
-        let future = br#"{"schema":2,"future_format":true}"#;
+        let future = br#"{"schema":99,"future_format":true}"#;
         db.execute(
             "INSERT INTO snapshots VALUES (4, ?1, ?2)",
             params![future, hash(future)],

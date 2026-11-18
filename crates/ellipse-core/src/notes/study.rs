@@ -7,6 +7,28 @@ pub struct Interval {
     pub end: i64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionKind {
+    #[default]
+    Focus,
+    Break,
+    Stopwatch,
+}
+
+impl SessionKind {
+    fn is_focus(&self) -> bool {
+        *self == Self::Focus
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Focus => "Focus",
+            Self::Break => "Break",
+            Self::Stopwatch => "Stopwatch",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub subject: String,
@@ -16,6 +38,12 @@ pub struct Session {
     pub running_since: Option<i64>,
     pub intervals: Vec<Interval>,
     pub finished: Option<i64>,
+    #[serde(default, skip_serializing_if = "SessionKind::is_focus")]
+    pub kind: SessionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<Id>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -70,6 +98,12 @@ impl Session {
 }
 
 impl Study {
+    pub(super) fn has_extended_fields(&self) -> bool {
+        self.history.iter().chain(&self.active).any(|session| {
+            !session.kind.is_focus() || session.task.is_some() || session.topic.is_some()
+        })
+    }
+
     pub fn start(
         &mut self,
         subject: &str,
@@ -80,6 +114,12 @@ impl Study {
         if self.active.is_some() || self.history.len() >= 20000 {
             return false;
         }
+        let now = self
+            .history
+            .iter()
+            .filter_map(|session| session.finished)
+            .max()
+            .map_or(now.max(0), |previous| now.max(previous));
         self.active = Some(Session {
             subject: label(subject),
             book,
@@ -88,6 +128,9 @@ impl Study {
             running_since: Some(now),
             intervals: vec![],
             finished: None,
+            kind: SessionKind::Focus,
+            task: None,
+            topic: None,
         });
         true
     }
@@ -130,6 +173,24 @@ impl Study {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn paused_segments_split_at_midnight_and_clock_rollback_cannot_overlap_finished_session() {
+        let midnight = 86_400_000;
+        let mut study = Study::default();
+        assert!(study.start("Physics", None, None, midnight - 60_000));
+        study.active.as_mut().unwrap().pause(midnight + 30_000);
+        study.active.as_mut().unwrap().resume(midnight + 90_000);
+        assert!(study.finish(midnight + 150_000));
+        assert_eq!(study.history[0].milliseconds_in(0, midnight), 60_000);
+        assert_eq!(
+            study.history[0].milliseconds_in(midnight, midnight + 200_000),
+            90_000
+        );
+        assert!(study.start("", None, Some(5), midnight - 120_000));
+        assert_eq!(study.active.as_ref().unwrap().started, midnight + 150_000);
+        assert_eq!(study.active.as_ref().unwrap().elapsed(midnight - 1), 0);
+    }
+
     #[test]
     fn suspension_pause_and_day_boundaries() {
         let mut study = Study::default();

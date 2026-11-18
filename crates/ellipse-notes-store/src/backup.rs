@@ -287,6 +287,24 @@ mod tests {
         });
         vault.books.push(book);
         vault.appearance.wallpaper = Some(picture);
+        use ellipse_core::notes::planner::{Day, Profile, Task, Track};
+        vault.planner.profile = Some(Profile {
+            track: Track::Both,
+            year: 2027,
+        });
+        let day = Day::new(2027, 1, 17).unwrap();
+        let id = vault
+            .planner
+            .save_task(Task::new(day, "Read the annotated PDF", 20))
+            .unwrap();
+        vault.planner.tasks[0].set_done(day, true, 25);
+        assert!(
+            vault
+                .study
+                .start("Physics", Some(vault.books[0].id), None, 30)
+        );
+        vault.study.active.as_mut().unwrap().task = Some(id);
+        assert!(vault.study.finish(90));
         let head = store.save(0, &vault).unwrap();
         let archive = store.backup(head, artwork).unwrap();
         (vault, pdf, archive)

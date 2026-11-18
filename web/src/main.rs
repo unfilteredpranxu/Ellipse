@@ -8,15 +8,17 @@ mod settings;
 
 use auth::Session;
 use leptos::prelude::*;
+use notes::Section;
 
 #[component]
 fn App() -> impl IntoView {
     let session = RwSignal::new(Session::Checking);
     let message = RwSignal::new(String::new());
     auth::observe(session, message);
-    let notes = RwSignal::new(false);
-    let open_notes = Callback::new(move |()| notes.set(true));
-    let close_notes = Callback::new(move |()| notes.set(false));
+    let section = RwSignal::new(None::<Section>);
+    let open = Memo::new(move |_| section.with(Option::is_some));
+    let open_section = Callback::new(move |destination| section.set(Some(destination)));
+    let close_notes = Callback::new(move |()| section.set(None));
 
     move || match session.get() {
         Session::Checking => view! {
@@ -26,24 +28,24 @@ fn App() -> impl IntoView {
             </main>
         }
         .into_any(),
-        Session::SignedOut if auth::is_native() && notes.get() => view! {
-            <notes::Notes local=true back=close_notes/>
+        Session::SignedOut if auth::is_native() && open.get() => view! {
+            <notes::Notes local=true section back=close_notes/>
         }
         .into_any(),
-        Session::SignedOut => view! { <SignIn message open_notes/> }.into_any(),
-        Session::SignedIn(_) if notes.get() => view! {
-            <notes::Notes local=false back=close_notes/>
+        Session::SignedOut => view! { <SignIn message open_section/> }.into_any(),
+        Session::SignedIn(account) if open.get() => view! {
+            <notes::Notes local=false account=account.uid section back=close_notes/>
         }
         .into_any(),
         Session::SignedIn(account) => view! {
-            <home::Home account=account message=message open_notes/>
+            <home::Home account=account message=message open_section/>
         }
         .into_any(),
     }
 }
 
 #[component]
-fn SignIn(message: RwSignal<String>, open_notes: Callback<()>) -> impl IntoView {
+fn SignIn(message: RwSignal<String>, open_section: Callback<Section>) -> impl IntoView {
     view! {
         <main class="screen" aria-label="Ellipse welcome">
             <div class="hero-wrap">
@@ -73,9 +75,14 @@ fn SignIn(message: RwSignal<String>, open_notes: Callback<()>) -> impl IntoView 
                             <span>"Continue with Google"</span>
                         </button>
                     <Show when=auth::is_native>
-                        <button type="button" class="signin-button local-notes-button" on:click=move |_|open_notes.run(())>
+                        <button type="button" class="signin-button local-notes-button" on:click=move |_|open_section.run(Section::Notes)>
                             "Open Notes on this device"
                         </button>
+                        <nav class="local-tools" aria-label="Tools on this device">
+                            {Section::PRODUCTIVITY.map(|section|view!{
+                                <button type="button" on:click=move |_|open_section.run(section)>{section.label()}</button>
+                            })}
+                        </nav>
                     </Show>
                     <p class="notice" role="status" aria-live="polite">{move || message.get()}</p>
                 </div>

@@ -47,7 +47,7 @@ impl Panel {
 pub fn Home(
     account: Account,
     message: RwSignal<String>,
-    open_notes: Callback<()>,
+    open_section: Callback<crate::notes::Section>,
 ) -> impl IntoView {
     let state = Workspace::new(account.uid);
     provide_context(state);
@@ -137,7 +137,12 @@ pub fn Home(
                     <a class="workspace-brand" href="#workspace-main"><span class="ellipse-mark" aria-hidden="true"></span>"Ellipse"</a>
                     <nav class="workspace-menu" aria-label="Workspace">
                         <ModeSelector state/>
-                        <button class="nav-action" type="button" on:click=move |_|open_notes.run(())><Icon name="book"/>"Notes"</button>
+                        <button class="nav-action" type="button" on:click=move |_|open_section.run(crate::notes::Section::Notes)><Icon name="book"/>"Notes"</button>
+                        <div class="workspace-planner-links">
+                            {crate::notes::Section::PRODUCTIVITY.map(|section|view!{
+                                <button class="nav-action" type="button" on:click=move |_|open_section.run(section)>{section.label()}</button>
+                            })}
+                        </div>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Artwork))><Icon name="image"/>"Artwork"</button>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Presets))><Icon name="grid"/>"Presets"</button>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Layout))><Icon name="settings"/>"Settings"</button>

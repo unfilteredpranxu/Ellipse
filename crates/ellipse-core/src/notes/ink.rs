@@ -280,6 +280,42 @@ pub fn lasso_contains(polygon: &[Point], point: Point) -> bool {
     inside
 }
 
+/// A nearly straight lasso drag is the diagonal of a selection box.
+/// Adapted from OwlLuna Canvas/InkLasso.swift at 7ea2a8c7 (MIT, © 2024–2026 Owais Khan).
+/// The notice ships as owlluna-license.txt.
+pub fn lasso_outline(path: &[Point]) -> Vec<Point> {
+    let [first, .., last] = path else {
+        return path.to_vec();
+    };
+    let dx = last.x - first.x;
+    let dy = last.y - first.y;
+    let span = dx.hypot(dy);
+    if span <= 12. || dx.abs() < 1. || dy.abs() < 1. {
+        return path.to_vec();
+    }
+    let tolerance = (0.06 * span).max(4.);
+    if path.iter().any(|point| {
+        let x = point.x - first.x;
+        let y = point.y - first.y;
+        let along = ((x * dx + y * dy) / (span * span)).clamp(0., 1.);
+        (x - dx * along).hypot(y - dy * along) > tolerance
+    }) {
+        return path.to_vec();
+    }
+    vec![
+        *first,
+        Point {
+            x: last.x,
+            ..*first
+        },
+        *last,
+        Point {
+            y: last.y,
+            ..*first
+        },
+    ]
+}
+
 pub fn lasso_hits(polygon: &[Point], stroke: &Stroke) -> bool {
     let cross =
         |a: Point, b: Point, c: Point| (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -360,6 +396,27 @@ fn cost(book: &Book) -> usize {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn diagonal_lasso_encloses_a_box_and_curved_lasso_is_preserved() {
+        let point = |x, y| Point {
+            x,
+            y,
+            ..Point::default()
+        };
+        let path = [point(10., 20.), point(36., 45.), point(60., 70.)];
+        let outline = lasso_outline(&path);
+        assert_eq!(outline.len(), 4);
+        assert!(lasso_contains(&outline, point(12., 65.)));
+        let curved = [
+            point(10., 20.),
+            point(9., 70.),
+            point(62., 71.),
+            point(10., 20.),
+        ];
+        assert_eq!(lasso_outline(&curved), curved);
+        assert_eq!(lasso_outline(&[]), []);
+    }
+
     use super::*;
     use crate::notes::{Paper, Vault};
 
