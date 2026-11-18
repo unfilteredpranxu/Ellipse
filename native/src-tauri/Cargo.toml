@@ -15,3 +15,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+
+# Keep the native Tauri package independent from the shared Rust-core workspace.
+[workspace]
