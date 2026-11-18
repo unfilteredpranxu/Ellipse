@@ -1,0 +1,14 @@
+[package]
+name = "ellipse-web"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+leptos = { version = "0.8.23", features = ["csr"] }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "CustomEvent", "Event", "EventTarget"] }
+js-sys = "0.3"
+console_error_panic_hook = "0.1"

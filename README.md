@@ -1,50 +1,38 @@
 # Ellipse
 
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-1a1a1a?style=flat-square)](LICENSE)
-![Source: Private](https://img.shields.io/badge/Source-Private-555555?style=flat-square)
-![Status: M01](https://img.shields.io/badge/Milestone-M01-555555?style=flat-square)
+**Ellipse** is a private, proprietary, Rust-first cross-platform personal workspace. Copyright © 2026 unfilteredpranxu. All rights reserved. See [LICENSE](LICENSE).
 
-**Ellipse** is a proprietary, Rust-first, offline-first personal workspace. Our intended products include an iOS/iPadOS PWA, web app, Android APK, Windows desktop app, and potential macOS build.
+- **GitHub:** private source repository \`unfilteredpranxu/Ellipse\`.
+- **Cloudflare:** https://ellipse-workspace.pages.dev/
+- **Rust UI:** \`web/\` — Leptos CSR + WebAssembly.
+- **Native application:** \`native/\` — Tauri 2 Rust shell targeting Windows/macOS/iOS/Android.
+- **Rust shared logic:** \`crates/ellipse-core/\`.
+- **Fallback static Cloudflare site:** \`site/\`, temporarily used while the Rust build/deploy pipeline is validated.
 
-## Try the live welcome-screen preview
+## Visual requirements
+Original monochrome artwork, full-screen edge-to-edge on phone, glass Google-only button anchored above safe area, no white card, no email/password/OTP, no quotation section. The same UI source is shared by Tauri and browser when Leptos builds.
 
-**[Open Ellipse on Cloudflare Pages](https://ellipse-workspace.pages.dev/)**
+## Build the Rust web UI
+Install Rust and Trunk, then:
+\`\`\`bash
+bash scripts/build-pages.sh
+\`\`\`
+Output: \`dist/\`. A Cloudflare Pages Git integration can use build command \`bash scripts/build-pages.sh\` with output directory \`dist\` after the build is validated.
 
-The public URL hosts only browser-delivered client files from the **private** GitHub repository. Source-code, secrets and future license verification services must stay private. Browser-delivered JavaScript/HTML/CSS remain inspectable.
+## Build native applications
+Install Node.js, Rust, platform SDKs, then:
+\`\`\`bash
+cd native && npm install
+npm run tauri -- build                  # Windows/macOS desktop on each respective OS
+npm run tauri -- android init
+npm run tauri -- android build          # Android SDK+NDK required
+npm run tauri -- ios init
+npm run tauri -- ios build              # macOS + Xcode only
+\`\`\`
+The iOS/macOS tools must run on macOS. Windows installer builds run on Windows. Android needs SDK/NDK/JDK. Native app source and a compilable shell are **not** evidence that APK/IPA/EXE/DMG builds or native Google login have been validated.
 
-### What works today
+## Authentication
+\`web/auth.js\` and \`site/auth.js\` implement real Firebase Google sign-in for supported browsers. Set Firebase Authentication → Authorized domains to include the active Pages hostname. Web popups may be blocked on some mobile browsers. Native OAuth must use a platform-appropriate browser/redirect provider; webview popup auth is explicitly disabled pending that implementation.
 
-- The supplied monochrome art and M01 welcome screen, at phone and desktop sizes.
-- Interactive sign-in/register/recovery **UI**, without real cloud authentication yet.
-- **Enter locally**: opens a basic local workspace with notes stored in browser localStorage.
-- PWA manifest and offline shell caching after installation/first load.
-- Cloudflare Pages deploys automatically from `main` with no build command and output directory `site`.
-- Rust core under `crates/ellipse-core` with unit tests; native Tauri/Rust shell scaffold under `native/`.
-- GitHub Actions runs Rust tests and a static preview acceptance check.
-
-### What does NOT work yet
-
-**Google sign-in, purchases, premium licensing, Drive sync, native APK/installers, and fully Rust-rendered web UI are not implemented/validated.** Don't treat demo UI as production features.
-
-The current visual web UI is an HTML/CSS/JS prototype preserving the original design; the native shell is Rust (Tauri). The next architecture task is a shared Leptos/Rust WebAssembly UI while maintaining screenshot fidelity.
-
-## Project layout
-
-- `site/` — deployable M01 preview and PWA assets (temporary frontend until shared Rust UI migration).
-- `crates/ellipse-core/` — Rust domain logic and tests.
-- `native/` — Rust/Tauri desktop/mobile shell scaffold sharing the web frontend.
-- `scripts/verify_site.py` — static preview acceptance checks.
-- `docs/STATUS.md` — implementation truth table.
-- `.github/workflows/verify.yml` — automated tests.
-
-## Test the Rust foundation
-
-```bash
-cargo test --workspace --all-targets
-```
-
-## Licensing
-
-Copyright © 2026 unfilteredpranxu. All rights reserved. This repository is **closed-source**, not open-source. See [LICENSE](LICENSE). Third-party libraries retain their own licenses. Any compiled-app end-user license will be separate.
-
-> Future commercial publication of uploaded reference artwork depends on applicable rights and permissions.
+## Quality/security
+Auth providers only: Google. Browser files are inspectable even though this repository is private. Never commit client secrets. App Store/Play Store purchases, promo plans, entitlements and account deletion remain separate future work.

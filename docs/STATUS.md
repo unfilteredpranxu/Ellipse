@@ -1,22 +1,20 @@
-# Ellipse implementation status — M01
+# Ellipse M02 — evidence status
 
-## Completed and published
-- Proprietary `LICENSE` on private GitHub repository.
-- First-install welcome/sign-in visual preview using original user-supplied black-and-white artwork.
-- Interactive local-only entry, notes and persistence in browser localStorage (subject to browser eviction).
-- Cloudflare Pages project `ellipse-workspace` connected to private GitHub `main` branch for automatic deployments.
-- PWA manifest and offline shell service worker in the `site/` preview.
-- Initial Rust workspace `crates/ellipse-core` with domain logic and tests.
-- Tauri 2 Rust native shell scaffold in `native/`. It currently uses the same frontend files as the web preview.
+## Implemented in source
+- Private/proprietary repository stays the source of truth.
+- Original artwork extracted byte-for-byte from the prior self-contained HTML to site/assets/ellipse-art.jpg.
+- New full-screen dark welcome with no white form, no quote box, only the bottom glass Google button.
+- Firebase Google-only web sign-in bridge using the existing ellipse-84ac1 project (existing authorized Pages domain).
+- Rust Leptos client-side rendered welcome screen in web/src/main.rs, using Trunk to build WebAssembly.
+- Tauri 2 native shell consumes the compiled Leptos frontend when built.
+- Cloudflare Pages keeps serving site/ until its build command and output directory are deliberately switched to scripts/build-pages.sh and dist/.
 
-## Not yet implemented or validated
-- Google OAuth: screens exist but real sign-in and managed account creation are **not configured**.
-- Subscriptions, payment verification, coupons, cloud entitlements: **not implemented**.
-- Google Drive sync: **not implemented**.
-- Native APK/Windows installer: **not built or device-tested**.
-- Browser interface is currently legacy HTML/CSS/JS, not Rust Leptos/Wasm. Migrate the UI to shared Leptos components in the next architecture milestone.
-- Art licensing for public commercial distribution: must be verified.
-- Automated end-to-end tests, synchronization, encryption and production auth: pending.
+## Still require test/evidence
+- Browser Google popup, Firebase session persistence, browser and platform QA.
+- Rust/Leptos WASM and all Tauri native build outputs must pass actual CI/build tests.
+- Google native OAuth for iOS/Android/Windows/macOS is **NOT IMPLEMENTED**. Firebase web popup is intentionally blocked inside Tauri webviews; do not misrepresent it as native OAuth.
+- Apple/Google developer credentials, app signing and store compliance for native releases.
+- Subscription backend and entitlements, cloud sync, full application workspace.
 
-## Golden rule
-One screen at a time. Do not claim preview-only functions are production-ready. Keep repository private and paid license verification server-side.
+## Production caution
+Only web client Firebase configuration is checked in; it is public by Firebase design. Do not put any OAuth client secrets, Firebase Admin service credentials, Apple signing identities or paid entitlement authority in static/browser code.

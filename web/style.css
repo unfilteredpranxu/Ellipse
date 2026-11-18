@@ -1,0 +1,31 @@
+
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;background:#030303;color:#f6f6f6}
+*{box-sizing:border-box}
+html,body{min-height:100%;margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid #fff;outline-offset:5px}
+.screen{position:relative;width:100%;min-height:100svh;min-height:100dvh;overflow:hidden;isolation:isolate;background:radial-gradient(ellipse at 50% 25%,#181818,#030303 75%)}
+.hero-wrap{position:absolute;inset:0;z-index:-2;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.hero-art{display:block;width:100%;height:100%;object-fit:cover;object-position:center 37%;filter:contrast(1.04);-webkit-user-select:none;user-select:none;pointer-events:none}
+.screen::after{content:"";z-index:-1;pointer-events:none;position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.28) 0%,transparent 16%,transparent 55%,rgba(0,0,0,.27) 69%,#050505 99%)}
+.topbar{position:absolute;top:0;left:0;right:0;z-index:2;padding:calc(env(safe-area-inset-top) + 24px) clamp(22px,4vw,58px) 0;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;color:#f3f3f3;font-size:19px;line-height:1;font-weight:660;letter-spacing:-.75px}
+.brand-mark{display:grid;place-items:center;width:31px;height:31px;border:1px solid rgba(255,255,255,.58);border-radius:9px;background:rgba(14,14,14,.56);box-shadow:inset 0 1px rgba(255,255,255,.13);backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
+.brand-mark::after{content:"";width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #f9f9f9;transform:translateY(-1px)}
+.topbar .edition{font-size:10px;font-weight:590;letter-spacing:.23em;color:rgba(255,255,255,.56);text-transform:uppercase}
+.bottom{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;flex-direction:column;align-items:center;padding:30px clamp(20px,6vw,72px) calc(env(safe-area-inset-bottom) + 27px);gap:15px}
+.signin-button{width:min(100%,410px);min-height:58px;display:flex;align-items:center;justify-content:center;gap:13px;border:1px solid rgba(255,255,255,.30);border-radius:19px;color:#fff;background:rgba(34,34,34,.54);backdrop-filter:blur(30px) saturate(135%);-webkit-backdrop-filter:blur(30px) saturate(135%);box-shadow:inset 0 1px rgba(255,255,255,.11),0 12px 45px rgba(0,0,0,.38);font-size:15px;font-weight:560;letter-spacing:-.17px;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.signin-button:hover{background:rgba(58,58,58,.64);border-color:rgba(255,255,255,.5)}
+.signin-button:active{transform:scale(.985)}
+.google-mark{display:block;width:21px;height:21px;flex:none}
+.notice{margin:0;max-width:410px;color:#fff;font-size:12px;font-weight:450;line-height:1.5;text-align:center;text-shadow:0 1px 4px #000}
+.notice:empty{display:none}
+.notice.error{background:rgba(40,10,10,.68);padding:10px 14px;border-radius:12px;backdrop-filter:blur(12px)}
+.signed-in{width:min(100%,410px);padding:14px 17px;display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid rgba(255,255,255,.25);background:rgba(23,23,23,.65);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-radius:18px}
+.account-name{font-size:14px;font-weight:620;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.account-label{margin-top:4px;font-size:11px;color:#bcbcbc}
+.signout{flex:none;color:#fff;font-size:12px;padding:10px 12px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);border-radius:10px}
+.sr-only{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;overflow:hidden}
+@media(min-width:780px){.hero-art{width:min(80vw,850px);height:100%;object-fit:cover;object-position:center 42%;mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%)}.bottom{padding-bottom:55px}.signin-button{min-height:62px}.screen::after{background:linear-gradient(180deg,rgba(0,0,0,.15),transparent 55%,#050505 100%)}}
+@media(max-width:390px){.topbar{padding-top:calc(env(safe-area-inset-top) + 19px)}.bottom{padding-bottom:calc(env(safe-area-inset-bottom) + 22px)}.signin-button{min-height:54px;border-radius:16px}}
+@media(prefers-reduced-motion:reduce){.signin-button{transition:none}}

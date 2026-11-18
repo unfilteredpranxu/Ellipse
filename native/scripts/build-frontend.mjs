@@ -1,8 +1,10 @@
-import { cp, mkdir, rm } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-const site = fileURLToPath(new URL('../../site/', import.meta.url));
-const out = fileURLToPath(new URL('../dist/', import.meta.url));
-await rm(out, { recursive: true, force: true });
-await mkdir(out, { recursive: true });
-await cp(site, out, { recursive: true });
-console.log('Ellipse: copied shared web interface to native frontendDist');
+import {cp, mkdir, rm} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const root=fileURLToPath(new URL('../../',import.meta.url));
+execFileSync('bash',[root+'scripts/build-pages.sh'],{stdio:'inherit',cwd:root});
+const dest=fileURLToPath(new URL('../dist/',import.meta.url));
+await rm(dest,{recursive:true,force:true});
+await mkdir(dest,{recursive:true});
+await cp(root+'dist/',dest,{recursive:true});
+console.log('Ellipse: native app now uses compiled Rust Leptos/WASM UI');
