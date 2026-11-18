@@ -1,5 +1,9 @@
-name: Ellipse — native packages (manual)
+name: Ellipse — native packages
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-packages.yml'
   workflow_dispatch:
     inputs:
       platform:
@@ -11,7 +15,7 @@ permissions:
   contents: read
 jobs:
   windows:
-    if: inputs.platform == 'windows'
+    if: github.event_name == 'push' || inputs.platform == 'windows'
     runs-on: windows-latest
     timeout-minutes: 70
     defaults:
@@ -34,7 +38,7 @@ jobs:
           path: native/src-tauri/target/release/bundle/**
           if-no-files-found: error
   macos:
-    if: inputs.platform == 'macos'
+    if: github.event_name == 'push' || inputs.platform == 'macos'
     runs-on: macos-latest
     timeout-minutes: 70
     defaults:
@@ -58,7 +62,7 @@ jobs:
           path: native/src-tauri/target/release/bundle/**
           if-no-files-found: error
   android:
-    if: inputs.platform == 'android'
+    if: github.event_name == 'push' || inputs.platform == 'android'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     defaults:
@@ -71,7 +75,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: android-actions/setup-android@v3
-      - name: Install NDK
+      - name: Install Android SDK and NDK
         run: |
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
@@ -90,7 +94,7 @@ jobs:
           path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: warn
   ios-compile-check:
-    if: inputs.platform == 'ios-compile-check'
+    if: github.event_name == 'push' || inputs.platform == 'ios-compile-check'
     runs-on: macos-latest
     timeout-minutes: 70
     defaults:
