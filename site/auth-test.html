@@ -1,193 +1,136 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="robots" content="noindex,nofollow">
-  <meta name="referrer" content="no-referrer">
-  <title>Ellipse — Firebase authentication test</title>
-  <style>
-    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light;background:#f8f8f8;color:#151515}
-    *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px}
-    main{width:min(100%,490px);background:white;border:1px solid #e6e6e6;border-radius:22px;padding:28px;box-shadow:0 18px 48px #0000000a}
-    h1{font-size:29px;letter-spacing:-1.4px;margin:4px 0 6px}h2{font-size:16px;margin:24px 0 10px}
-    p{color:#626262;line-height:1.55;margin:0 0 20px}label{display:block;font-size:13px;font-weight:650;margin:15px 0 6px}
-    input{width:100%;border:1px solid #cfcfcf;border-radius:11px;padding:13px 14px;font:inherit;background:#fff;color:#161616}
-    input:focus-visible,button:focus-visible{outline:3px solid #6d90ef;outline-offset:2px}
-    .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:17px}
-    button{border-radius:11px;border:1px solid #ccc;min-height:45px;background:white;color:#111;font:inherit;font-size:14px;font-weight:650;padding:10px;cursor:pointer}
-    button.primary{background:#111;color:white;border-color:#111}
-    button:disabled{opacity:.5;cursor:wait}
-    button.wide{width:100%;margin-top:10px}.muted{font-size:12px;color:#777}.status{padding:13px;background:#f3f3f3;border:1px solid #e0e0e0;border-radius:11px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
-    .status.good{background:#ecf7ef;border-color:#b8e1c1}.status.bad{background:#fff1f0;border-color:#f6c7c4}
-    .small-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-    .tag{font-size:11px;letter-spacing:.1em;font-weight:750;color:#777;text-transform:uppercase}
-    a{color:#111}footer{margin-top:20px;border-top:1px solid #eee;padding-top:16px}
-    @media(max-width:390px){main{padding:20px}.actions,.small-actions{grid-template-columns:1fr}}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#151515">
+<title>Ellipse — Google sign-in test</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light;background:#f8f8f8;color:#151515}
+*{box-sizing:border-box}body{min-height:100dvh;display:grid;place-items:center;margin:0;padding:24px}
+main{width:min(100%,470px);background:#fff;border:1px solid #e6e6e6;border-radius:22px;padding:28px;box-shadow:0 18px 48px #0000000a}
+h1{font-size:31px;letter-spacing:-1.3px;margin:6px 0 10px}h2{font-size:16px;margin:24px 0 10px}
+p{color:#666;line-height:1.55;margin:0 0 17px}
+button{border-radius:11px;border:1px solid #ccc;min-height:48px;background:#fff;color:#111;font:inherit;font-size:15px;font-weight:650;padding:11px 14px;cursor:pointer}
+button.primary{background:#151515;color:#fff;border-color:#151515}
+button:disabled{opacity:.48;cursor:wait}
+button:focus-visible,a:focus-visible{outline:3px solid #708fed;outline-offset:3px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.wide{width:100%;margin-top:12px}
+.tag{font-size:11px;letter-spacing:.1em;font-weight:750;color:#777;text-transform:uppercase}
+.status{padding:13px;background:#f4f4f4;border:1px solid #e4e4e4;border-radius:11px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+.status.good{background:#edf8ef;border-color:#b8e1c1}.status.bad{background:#fff1f0;border-color:#f6c7c4}
+.muted{font-size:12px;color:#777;line-height:1.6}footer{margin-top:22px;border-top:1px solid #eee;padding-top:15px}a{color:inherit}
+@media(max-width:390px){main{padding:21px}.row{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
 <main>
-  <div class="tag">Ellipse / development</div>
-  <h1>Account test lab</h1>
-  <p>Real Firebase authentication. This is a separate test screen, not the main Ellipse login page.</p>
-  <div id="connection" class="status" role="status" aria-live="polite">Connecting to Firebase...</div>
-  <label for="email">Email address</label>
-  <input id="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@example.com" required>
-  <label for="password">Password (at least 6 characters)</label>
-  <input id="password" type="password" autocomplete="current-password" minlength="6" placeholder="Enter your password" required>
-  <div class="actions">
-    <button id="register" class="primary" disabled>Create account</button>
-    <button id="login" disabled>Sign in</button>
-  </div>
-  <button id="google" class="wide" disabled>Continue with Google</button>
-  <button id="reset" class="wide" disabled>Email password-reset link</button>
-  <h2>Account & session</h2>
-  <div id="account" class="status" aria-live="polite">Checking saved session...</div>
-  <div class="small-actions" style="margin-top:10px">
-    <button id="verify" disabled>Send verification email</button>
-    <button id="refresh" disabled>Refresh verification</button>
-    <button id="logout" disabled>Sign out</button>
-  </div>
-  <h2>Most recent result</h2>
-  <div id="result" class="status" role="status" aria-live="polite">No test performed yet.</div>
-  <footer class="muted">
-    This page never stores or logs your password. Firebase handles accounts and session persistence.
-    Test account data lives in Firebase Authentication; Ellipse workspace notes do not sync here.
-    <p style="margin-top:12px"><a href="/">Return to Ellipse</a></p>
-  </footer>
+<div class="tag">Ellipse / development test</div>
+<h1>Google account test</h1>
+<p>Test real Firebase Google authentication without changing the main Ellipse sign-in design or your local notes.</p>
+<div id="connection" class="status" role="status" aria-live="polite">Initializing Firebase SDK…</div>
+<button id="google" class="primary wide" disabled>Continue with Google</button>
+<h2>Account & session</h2>
+<div id="account" class="status" role="status" aria-live="polite">Checking saved session…</div>
+<div class="row" style="margin-top:10px">
+<button id="refresh" disabled>Refresh account</button>
+<button id="logout" disabled>Sign out</button>
+</div>
+<h2>Latest result</h2>
+<div id="result" class="status" role="status" aria-live="polite">No sign-in attempted yet.</div>
+<footer class="muted">Only Google is enabled. An account is created in Firebase when a new Google user first signs in. Firebase persists the session when browser storage permits. No password or email OTP is collected here. Workspace notes remain local and are not synchronized.
+<p style="margin-top:14px"><a href="/">Return to main Ellipse website</a></p>
+</footer>
 </main>
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
-  import {
-    getAuth, setPersistence, browserLocalPersistence, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail,
-    sendEmailVerification, signOut, reload
-  } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
+import {getAuth,setPersistence,browserLocalPersistence,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signOut,reload} from "https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js";
 
-  const config = Object.freeze({
-    apiKey: "AIzaSyDVZH6QV5vs6pa58NdvV_W0_MWCaMu4jgk",
-    authDomain: "ellipse-84ac1.firebaseapp.com",
-    projectId: "ellipse-84ac1",
-    storageBucket: "ellipse-84ac1.firebasestorage.app",
-    messagingSenderId: "90495318702",
-    appId: "1:90495318702:web:a63091b13794c9759d4b3f"
-  });
-  const $ = id => document.getElementById(id);
-  const ids = ["register","login","google","reset","verify","refresh","logout"];
-  const auth = getAuth(initializeApp(config));
-  let ready = false;
-  let busy = false;
+const firebaseConfig = {
+  apiKey: "AIzaSyDVZH6QV5vs6pa58NdvV_WO_MWCaMu4jgk",
+  authDomain: "ellipse-84ac1.firebaseapp.com",
+  projectId: "ellipse-84ac1",
+  storageBucket: "ellipse-84ac1.firebasestorage.app",
+  messagingSenderId: "90495318702",
+  appId: "1:90495318702:web:a63091b13794c9759d4b3f"
+};
+const $=id=>document.getElementById(id);
+let ready=false,busy=false;
+const auth=getAuth(initializeApp(firebaseConfig));
 
-  function status(message, kind = "") {
-    $("result").textContent = message;
-    $("result").className = "status " + kind;
-  }
-  function buttons() {
-    const logged = Boolean(auth.currentUser);
-    for (const id of ids) {
-      $(id).disabled = !ready || busy || (["verify","refresh","logout"].includes(id) && !logged);
-    }
-  }
-  function session(user) {
-    $("account").textContent = user
-      ? "SIGNED IN\nEmail: " + (user.email || "(no email)") +
-        "\nUser ID: " + user.uid +
-        "\nEmail verified: " + (user.emailVerified ? "YES" : "NO") +
-        "\nProvider(s): " + user.providerData.map(p => p.providerId).join(", ")
-      : "SIGNED OUT\nNo active Firebase account on this browser.";
-    $("account").className = "status " + (user ? "good" : "");
-    buttons();
-  }
-  function explain(error) {
-    const code = error && error.code ? error.code : "unknown";
-    const map = {
-      "auth/operation-not-allowed": "Enable this sign-in provider in Firebase Authentication → Sign-in method.",
-      "auth/unauthorized-domain": "Add ellipse-workspace.pages.dev in Firebase Authentication → Settings → Authorized domains.",
-      "auth/invalid-credential": "Email or password was not accepted.",
-      "auth/email-already-in-use": "That email already has an account. Try signing in.",
-      "auth/weak-password": "Use a stronger password.",
-      "auth/invalid-email": "Enter a valid email address.",
-      "auth/popup-blocked": "Safari blocked the Google sign-in popup. Allow popups or try a desktop browser.",
-      "auth/popup-closed-by-user": "Google sign-in was cancelled.",
-      "auth/too-many-requests": "Too many attempts. Try again later."
-    };
-    return (map[code] || "Firebase returned an error.") + " (" + code + ")";
-  }
-  async function run(task) {
-    if (!ready || busy) return;
-    busy = true;
-    buttons();
-    try { await task(); }
-    catch (err) { status(explain(err), "bad"); }
-    finally { busy = false; buttons(); }
-  }
-  function email() {
-    const value = $("email").value.trim();
-    if (!value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw {code:"auth/invalid-email"};
-    return value;
-  }
-  function password() {
-    const value = $("password").value;
-    if (value.length < 6) throw {code:"auth/weak-password"};
-    return value;
-  }
-
-  $("register").addEventListener("click", () => run(async () => {
-    const cred = await createUserWithEmailAndPassword(auth, email(), password());
-    $("password").value = "";
-    status("Account created in Firebase Auth. UID: " + cred.user.uid + ". Sending verification email...", "good");
-    try {
-      await sendEmailVerification(cred.user);
-      status("Real Firebase account created and verification email requested. Check your inbox and spam folder. UID: " + cred.user.uid, "good");
-    } catch (err) {
-      status("Account WAS created, but verification email failed: " + explain(err), "bad");
-    }
-  }));
-  $("login").addEventListener("click", () => run(async () => {
-    const cred = await signInWithEmailAndPassword(auth, email(), password());
-    $("password").value = "";
-    status("Sign-in successful. Saved Firebase user ID: " + cred.user.uid, "good");
-  }));
-  $("google").addEventListener("click", () => run(async () => {
-    const cred = await signInWithPopup(auth, new GoogleAuthProvider());
-    status("Google sign-in successful. Saved Firebase user ID: " + cred.user.uid, "good");
-  }));
-  $("reset").addEventListener("click", () => run(async () => {
-    await sendPasswordResetEmail(auth, email());
-    status("Password-reset request accepted by Firebase. If eligible, an email will be sent; check your inbox and spam. This does not prove delivery.", "good");
-  }));
-  $("verify").addEventListener("click", () => run(async () => {
-    if (!auth.currentUser) throw {code:"auth/no-current-user"};
-    await sendEmailVerification(auth.currentUser);
-    status("Verification email request accepted. Check inbox/spam, then tap Refresh verification.", "good");
-  }));
-  $("refresh").addEventListener("click", () => run(async () => {
-    if (!auth.currentUser) throw {code:"auth/no-current-user"};
-    await reload(auth.currentUser);
-    session(auth.currentUser);
-    status("Firebase refreshed this account. Email verified: " + (auth.currentUser.emailVerified ? "YES" : "NO"), "good");
-  }));
-  $("logout").addEventListener("click", () => run(async () => {
-    await signOut(auth);
-    status("Signed out of Firebase. Sign in again to confirm your account persists.", "good");
-  }));
-  window.addEventListener("unhandledrejection", event => {
-    status("Unexpected authentication error: " + explain(event.reason), "bad");
-    event.preventDefault();
-  });
-  onAuthStateChanged(auth, user => session(user), error => status(explain(error), "bad"));
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-    ready = true;
-    $("connection").textContent = "Firebase connected to project ellipse-84ac1. Test providers below.";
-    $("connection").className = "status good";
-    buttons();
-  } catch (error) {
-    $("connection").textContent = "Firebase initialization failed: " + explain(error);
-    $("connection").className = "status bad";
-  }
+function message(text,kind=""){
+  $("result").textContent=text;
+  $("result").className="status "+kind;
+}
+function buttons(){
+  $("google").disabled=!ready||busy;
+  $("refresh").disabled=!ready||busy||!auth.currentUser;
+  $("logout").disabled=!ready||busy||!auth.currentUser;
+}
+function account(user){
+  $("account").textContent=user
+    ? "SIGNED IN\nName: "+(user.displayName||"(not provided)")+
+      "\nEmail: "+(user.email||"(not provided)")+
+      "\nVerified: "+(user.emailVerified?"YES":"NO")+
+      "\nFirebase UID: "+user.uid
+    : "SIGNED OUT\nNo Firebase account is signed in on this browser.";
+  $("account").className="status"+(user?" good":"");
+  buttons();
+}
+function explain(err){
+  const code=err?.code||"unknown";
+  const messages={
+    "auth/invalid-api-key":"The Firebase web API key is not accepted. Confirm the exact key and its API restrictions in Google Cloud.",
+    "auth/unauthorized-domain":"Authorize ellipse-workspace.pages.dev in Firebase Authentication → Settings → Authorized domains.",
+    "auth/operation-not-allowed":"Enable Google under Firebase Authentication → Sign-in method.",
+    "auth/popup-blocked":"Safari blocked the login popup. Allow popups for this site and try again.",
+    "auth/popup-closed-by-user":"Google sign-in was cancelled.",
+    "auth/cancelled-popup-request":"A previous Google popup was closed.",
+    "auth/account-exists-with-different-credential":"An account already uses this email with another sign-in method.",
+    "auth/too-many-requests":"Too many attempts. Try again later.",
+    "auth/network-request-failed":"Could not reach Firebase. Check internet/VPN/content blockers."
+  };
+  return (messages[code]||"Firebase could not complete the request.")+" ("+code+")";
+}
+async function run(task){
+  if(!ready||busy)return;
+  busy=true;buttons();
+  try{await task()}catch(err){message(explain(err),"bad")}
+  finally{busy=false;buttons()}
+}
+$("google").addEventListener("click",()=>run(async()=>{
+  const result=await signInWithPopup(auth,new GoogleAuthProvider());
+  await result.user.getIdToken(true);
+  message("Google sign-in succeeded. Firebase account UID: "+result.user.uid+
+    ". Reload Safari to test whether your session is restored.","good");
+}));
+$("refresh").addEventListener("click",()=>run(async()=>{
+  if(!auth.currentUser)return;
+  await reload(auth.currentUser);
+  account(auth.currentUser);
+  message("Account refreshed successfully from Firebase.","good");
+}));
+$("logout").addEventListener("click",()=>run(async()=>{
+  await signOut(auth);
+  message("Signed out. Tap Continue with Google to log back into the same account.","good");
+}));
+onAuthStateChanged(auth,account,err=>{
+  $("connection").textContent="Firebase session check failed: "+explain(err);
+  $("connection").className="status bad";
+});
+try{
+  await setPersistence(auth,browserLocalPersistence);
+  ready=true;
+  $("connection").textContent="Firebase SDK initialized for ellipse-84ac1. Google sign-in is ready to attempt.";
+  $("connection").className="status good";
+  buttons();
+}catch(err){
+  $("connection").textContent="Unable to enable saved sign-in sessions: "+explain(err);
+  $("connection").className="status bad";
+}
 </script>
 </body>
 </html>
