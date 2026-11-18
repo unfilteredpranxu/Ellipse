@@ -34,5 +34,4 @@ function state(s){
 }
 window.addEventListener("ellipse:auth",e=>state(e.detail));
 if(window.ellipseAuthSnapshot)state(window.ellipseAuthSnapshot);
-if("serviceWorker" in navigator && location.protocol==="https:")navigator.serviceWorker.register("/sw.js").catch(()=>{});
 </script></body></html>
