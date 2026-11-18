@@ -24,3 +24,7 @@ Treat these as the primary **visual acceptance references**, not as executable c
 - The images include *illustrative* statistics, activity graphs, and items; **never misrepresent these as real user metrics or shipped functionality**. Hook to actual data or clearly label placeholders/disable unimplemented actions.
 - Keep build, lint, test, and screenshot checks for Rust/WASM and target viewports. Verify GitHub CI and Cloudflare against the actual commit before claiming success.
 - Change production code only when tasked; reference files are assets for development review and must not accidentally be published as user-facing functional content.
+
+## Ellipse Notes — current master task and user-approved screenshots
+
+For any task involving Notes Library, notebook editing, PDF annotations, pen input, folders, study timer, or Notes themes, read [the single complete Codex task](docs/ellipse-notes/CODEX_ULTIMATE_SINGLE_TASK.md) and [the four reference images and priority rules](docs/ellipse-notes/references/README.md) BEFORE editing. The cream physical-book carousel is the Notes Library's visual authority. OwlLuna screenshots establish functional toolbar and folder/ink behavior ONLY, not the final visual theme. The editor is a separate full-screen route and its timer starts hidden. Preserve native-first/local-first notes, read-only Notes on the public web, and existing Ellipse home modes.
