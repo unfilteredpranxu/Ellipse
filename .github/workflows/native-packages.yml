@@ -1,0 +1,115 @@
+name: Ellipse — native packages (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Which native platform?"
+        required: true
+        type: choice
+        options: [windows, macos, android, ios-compile-check]
+permissions:
+  contents: read
+jobs:
+  windows:
+    if: inputs.platform == 'windows'
+    runs-on: windows-latest
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: wasm32-unknown-unknown}
+      - uses: taiki-e/install-action@v2
+        with: {tool: trunk}
+      - run: npm install
+      - run: npm run icons
+      - run: npm run tauri -- build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellipse-windows
+          path: native/src-tauri/target/release/bundle/**
+          if-no-files-found: error
+  macos:
+    if: inputs.platform == 'macos'
+    runs-on: macos-latest
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: wasm32-unknown-unknown}
+      - uses: taiki-e/install-action@v2
+        with: {tool: trunk}
+      - run: npm install
+      - run: npm run icons
+      - run: npm run tauri -- build
+        env: {APPLE_SIGNING_IDENTITY: "-"}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellipse-macos
+          path: native/src-tauri/target/release/bundle/**
+          if-no-files-found: error
+  android:
+    if: inputs.platform == 'android'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - name: Install NDK
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: "wasm32-unknown-unknown,aarch64-linux-android"}
+      - uses: taiki-e/install-action@v2
+        with: {tool: trunk}
+      - run: npm install
+      - run: npm run icons
+      - run: npm run tauri -- android init --ci
+      - run: npm run tauri -- android build --ci --apk --target aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellipse-android-unsigned
+          path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+  ios-compile-check:
+    if: inputs.platform == 'ios-compile-check'
+    runs-on: macos-latest
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: "wasm32-unknown-unknown,aarch64-apple-ios"}
+      - uses: taiki-e/install-action@v2
+        with: {tool: trunk}
+      - run: npm install
+      - run: npm run icons
+      - run: npm run tauri -- ios init --ci
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellipse-ios-xcode-project
+          path: native/src-tauri/gen/apple/**
+          if-no-files-found: warn

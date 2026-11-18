@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite ../site --host 127.0.0.1",
     "build": "node scripts/build-frontend.mjs",
-    "tauri": "tauri"
+    "icons": "tauri icon ../site/favicon.svg",
+    "tauri": "tauri",
+    "build:desktop": "npm run icons && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
