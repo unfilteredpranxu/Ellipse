@@ -1,4 +1,4 @@
-use ellipse_core::notes::{Page, Pen, Point, Stroke, Template, outline};
+use ellipse_core::notes::{Page, Pen, Point, Stroke, outline};
 use leptos::{
     ev, html,
     leptos_dom::helpers::{request_animation_frame, window_event_listener},
@@ -77,89 +77,10 @@ fn paint_stroke(ctx: &CanvasRenderingContext2d, stroke: &Stroke) {
 
 fn paint_paper(ctx: &CanvasRenderingContext2d, page: &Page) {
     let paper = &page.paper;
-    let (w, h, spacing) = (
-        f64::from(paper.width),
-        f64::from(paper.height),
-        f64::from(paper.spacing),
-    );
-    let spacing = spacing.max((w * h / 12_000.).sqrt());
     ctx.set_fill_style_str(&paper.background.hex());
-    ctx.fill_rect(0., 0., w, h);
-    if paper.template == Template::Blank {
-        return;
-    }
+    ctx.fill_rect(0., 0., f64::from(paper.width), f64::from(paper.height));
     ctx.set_fill_style_str(&paper.pattern.hex());
-    ctx.set_stroke_style_str(&paper.pattern.hex());
-    ctx.set_line_width(0.5);
-    ctx.begin_path();
-    let row = |y| {
-        ctx.move_to(0., y);
-        ctx.line_to(w, y);
-    };
-    let col = |x| {
-        ctx.move_to(x, 0.);
-        ctx.line_to(x, h);
-    };
-    match paper.template {
-        Template::Dotted => {
-            for x in 1..(w / spacing) as u32 {
-                for y in 1..(h / spacing) as u32 {
-                    ctx.fill_rect(f64::from(x) * spacing, f64::from(y) * spacing, 1.2, 1.2);
-                }
-            }
-        }
-        Template::Music => {
-            for staff in 1..(h / (spacing * 4.)) as u32 {
-                for line in 0..5 {
-                    row(f64::from(staff) * spacing * 4. + f64::from(line) * spacing * 0.31);
-                }
-            }
-        }
-        Template::Planner => {
-            for line in 1..7 {
-                col(w * f64::from(line) / 7.);
-            }
-            for line in 1..10 {
-                row(h * f64::from(line) / 10.);
-            }
-        }
-        Template::Cornell => {
-            col(w * 0.26);
-            row(h * 0.81);
-            for line in 2..(h * 0.81 / spacing) as u32 {
-                let y = f64::from(line) * spacing;
-                ctx.move_to(w * 0.26, y);
-                ctx.line_to(w, y);
-            }
-        }
-        _ => {
-            let space = if paper.template == Template::Graph {
-                spacing / 2.
-            } else {
-                spacing
-            };
-            for i in 1..(h / space) as u32 {
-                row(f64::from(i) * space);
-            }
-            if matches!(paper.template, Template::Grid | Template::Graph) {
-                for i in 1..(w / space) as u32 {
-                    col(f64::from(i) * space);
-                }
-            }
-        }
-    }
-    ctx.stroke();
-    if paper.template == Template::Graph {
-        ctx.set_line_width(0.85);
-        ctx.begin_path();
-        for i in 1..(h / (spacing * 2.5)) as u32 {
-            row(f64::from(i) * spacing * 2.5);
-        }
-        for i in 1..(w / (spacing * 2.5)) as u32 {
-            col(f64::from(i) * spacing * 2.5);
-        }
-        ctx.stroke();
-    }
+    paper.pattern_rectangles(|[x, y, width, height]| ctx.fill_rect(x, y, width, height));
 }
 
 fn setup(canvas: &HtmlCanvasElement, page: &Page) -> Option<CanvasRenderingContext2d> {

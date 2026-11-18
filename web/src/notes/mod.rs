@@ -16,7 +16,6 @@ enum SaveState {
     Clean,
     Saving,
     Error,
-    Recovery,
 }
 
 #[derive(Clone, Copy)]
@@ -28,6 +27,7 @@ struct NotesState {
     head: RwSignal<u32>,
     epoch: RwSignal<u32>,
     saving: RwSignal<SaveState>,
+    recovery_required: RwSignal<bool>,
     error: RwSignal<String>,
     current: RwSignal<Option<Id>>,
     selected: RwSignal<Option<Id>>,
@@ -49,6 +49,7 @@ impl NotesState {
             head: RwSignal::new(0),
             epoch: RwSignal::new(0),
             saving: RwSignal::new(SaveState::Clean),
+            recovery_required: RwSignal::new(false),
             error: RwSignal::new(String::new()),
             current: RwSignal::new(None),
             selected: RwSignal::new(None),
@@ -96,14 +97,19 @@ impl NotesState {
                     Ok(head) => {
                         self.head.set(head);
                         if epoch == self.epoch.get_untracked() {
-                            self.saving.set(SaveState::Clean);
-                            self.error.set(String::new());
+                            batch(|| {
+                                self.saving.set(SaveState::Clean);
+                                self.error.set(String::new());
+                                self.recovery_required.set(false);
+                            });
                             return;
                         }
                     }
                     Err(error) => {
-                        self.saving.set(SaveState::Error);
-                        self.error.set(error);
+                        batch(|| {
+                            self.error.set(error);
+                            self.saving.set(SaveState::Error);
+                        });
                         return;
                     }
                 }
@@ -138,18 +144,15 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
         spawn_local(async move {
             match io::load().await {
                 Ok(snapshot) => {
-                    if loaded.try_set(true).is_some() {
+                    if loaded.try_get_untracked().is_none() {
                         return;
                     }
-                    state.head.set(snapshot.head);
-                    state.vault.set(snapshot.vault);
-                    if snapshot.recovered {
-                        state.saving.set(SaveState::Recovery);
-                        state.error.set(
-                            "Notes recovered an earlier checkpoint. Confirm it before authoring."
-                                .into(),
-                        );
-                    }
+                    batch(|| {
+                        state.head.set(snapshot.head);
+                        state.vault.set(snapshot.vault);
+                        state.recovery_required.set(snapshot.recovered);
+                        loaded.set(true);
+                    });
                 }
                 Err(error) => {
                     let _ = bootstrap_error.try_set(error);
@@ -170,7 +173,7 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
                     <button type="button" on:click=move |_| back.run(())>"Back to Ellipse"</button>
                 </main>
             }>
-                <Show when=move || state.saving.get()==SaveState::Recovery fallback=move || view! {
+                <Show when=move || state.recovery_required.get() fallback=move || view! {
                     {move || match state.current.get() {
                         Some(id) => view! { <editor::Editor state id/> }.into_any(),
                         None => view! { <library::Library state settings back/> }.into_any(),
@@ -178,9 +181,16 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
                 }>
                     <main class="notes-empty">
                         <h1>"Recover Notes"</h1>
-                        <p>{move || state.error.get()}</p>
-                        <button type="button" on:click=move |_| state.flush()>"Use recovered checkpoint"</button>
-                        <button type="button" on:click=move |_| back.run(())>"Back to Ellipse"</button>
+                        <p>"Notes found an earlier checkpoint. Save it before editing documents."</p>
+                        <Show when=move || state.saving.get()==SaveState::Error>
+                            <p role="alert">{move || state.error.get()}</p>
+                        </Show>
+                        <button type="button" disabled=move || state.saving.get()==SaveState::Saving
+                            on:click=move |_| state.flush()>
+                            {move || if state.saving.get()==SaveState::Saving {"Saving recovered checkpoint…"} else {"Use recovered checkpoint"}}
+                        </button>
+                        <button type="button" disabled=move || state.saving.get()==SaveState::Saving
+                            on:click=move |_| back.run(())>"Back to Ellipse"</button>
                     </main>
                 </Show>
             </Show>
@@ -196,7 +206,7 @@ fn SaveIndicator(state: NotesState) -> impl IntoView {
             match state.saving.get() {
                 SaveState::Clean=>"Saved on this device".into(),
                 SaveState::Saving=>"Saving…".into(),
-                SaveState::Error|SaveState::Recovery=>state.error.get(),
+                SaveState::Error=>state.error.get(),
             }
         }}</span>
         <Show when=move || state.saving.get()==SaveState::Error>

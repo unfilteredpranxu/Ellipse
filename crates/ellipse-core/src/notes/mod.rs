@@ -1,4 +1,5 @@
 mod ink;
+mod paper;
 mod study;
 
 use crate::artwork::{valid_asset_id, Color, Frame};

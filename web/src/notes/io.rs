@@ -1,6 +1,6 @@
 use crate::media::error_text;
 use ellipse_core::notes::{Book, Point, Vault, inverse_pdf, outline};
-use js_sys::{JSON, Promise};
+use js_sys::{Function, JSON, Promise};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -28,7 +28,7 @@ extern "C" {
     #[wasm_bindgen(js_name = downloadNotebook)]
     pub fn download_notebook(json: &str, name: &str);
     #[wasm_bindgen(js_name = exportPdf)]
-    fn export_pdf(pdf: &JsValue, spec: &JsValue, name: &str) -> Promise;
+    fn export_pdf(pdf: &JsValue, spec: &JsValue, stationery: &Function, name: &str) -> Promise;
 }
 
 pub struct PdfHandle(pub JsValue);
@@ -126,11 +126,27 @@ pub async fn export(book: &Book, pdf: Option<&PdfHandle>) -> Result<(), String> 
                 serde_json::json!({"x":point.x,"y":point.y,"value":value,"color":text.color,"size":text.size,"angle":angle,"bold":text.bold,"italic":text.italic})
             })
         }).collect();
-        serde_json::json!({"width":page.paper.width,"height":page.paper.height,"background":page.paper.background,"ink":ink,"text":text})
+        let stationery_key = format!("{:?}:{}:{}:{}",page.paper.template,page.paper.width,page.paper.height,page.paper.spacing);
+        serde_json::json!({"width":page.paper.width,"height":page.paper.height,"background":page.paper.background,
+            "pattern":page.paper.pattern,"stationery":stationery_key,"ink":ink,"text":text})
     }).collect::<Vec<_>>();
+    let papers = book
+        .pages
+        .iter()
+        .map(|page| page.paper.clone())
+        .collect::<Vec<_>>();
+    let stationery = Closure::<dyn Fn(u32) -> Result<JsValue, JsError>>::new(move |index: u32| {
+        let paper = papers
+            .get(index as usize)
+            .ok_or_else(|| JsError::new("Invalid stationery page."))?;
+        let mut rectangles = Vec::new();
+        paper.pattern_rectangles(|rect| rectangles.push(rect));
+        encode(&rectangles).map_err(|message| JsError::new(&message))
+    });
     result(export_pdf(
         pdf.map_or(&JsValue::NULL, |pdf| &pdf.0),
         &encode(&layer)?,
+        stationery.as_ref().unchecked_ref(),
         &format!("{}.pdf", book.title),
     ))
     .await?;

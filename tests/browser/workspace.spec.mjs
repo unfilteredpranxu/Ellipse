@@ -530,8 +530,8 @@ test("authenticated web Notes only reads explicitly opened local PDFs", async ({
   await expect(page.getByRole("button",{name:"Field notes",exact:true})).toHaveCount(0);
 });
 
-async function stubNotesBridge(page, fixtures = false) {
-  await page.addInitScript(seed => {
+async function stubNotesBridge(page, fixtures = false, recover = false) {
+  await page.addInitScript(({seed,recover}) => {
     const colors=[[109,51,42],[89,79,64],[42,66,91],[148,116,77],[42,65,56],[97,64,75],[40,62,76]];
     function initial() {
       let next=1;
@@ -545,11 +545,14 @@ async function stubNotesBridge(page, fixtures = false) {
     }
     window.__TAURI_INTERNALS__={invoke:async (command,args)=>{
       const key="qa-notes";
-      const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:0,vault:initial(),recovered:false};
+      const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:recover?7:0,vault:initial(),recovered:recover};
       if (command==="notes_load") return previous;
       if (command==="notes_save") {
         if (window.__failNotesSave) throw Error("Fixture storage unavailable.");
         if (args.head!==previous.head) throw Error("Revision conflict.");
+        if (previous.recovered) {
+          await new Promise(resolve=>{window.__finishNotesRecovery=resolve;});
+        }
         await new Promise(resolve=>setTimeout(resolve,35));
         const head=args.head+1;
         sessionStorage.setItem(key,JSON.stringify({head,vault:args.vault,recovered:false}));
@@ -576,7 +579,7 @@ async function stubNotesBridge(page, fixtures = false) {
       }
       throw Error("Unknown test bridge command.");
     }};
-  },fixtures);
+  },{seed:fixtures,recover});
 }
 
 async function openLocalNotes(page) {
@@ -692,6 +695,68 @@ test("cream shelf reflows and selects real notebook fixtures on phone, tablet an
   await expect(page.locator(".notes-list .notes-book")).toHaveCount(1);
 });
 
+test("full-screen Notes editor keeps page and focus controls usable across device viewports",async({page},info)=>{
+  await stubNotesBridge(page,true);
+  await page.goto("/");
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"Open",exact:true}).click();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  for (const [width,height] of [[320,568],[360,740],[390,844],[430,932],[820,1180],[1024,768],[844,390],[1536,1024]]) {
+    await page.setViewportSize({width,height});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(width);
+    const controls=await page.evaluate(()=>[...document.querySelectorAll(".notes-editor-bar button, .notes-page-bar button, .notes-tray select")]
+      .map(item=>{const {left,top,right,bottom,height}=item.getBoundingClientRect();return {left,top,right,bottom,height};}));
+    for(const control of controls) {
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(width);
+      expect(control.bottom).toBeLessThanOrEqual(height);
+      expect(control.height).toBeGreaterThanOrEqual(44);
+    }
+    const workarea=await page.locator(".notes-workarea").boundingBox();
+    expect(workarea.height).toBeGreaterThan(90);
+    const pages=page.getByRole("button",{name:"Pages",exact:true});
+    await pages.click();
+    await expect(page.getByRole("complementary",{name:"Page navigator"})).toBeVisible();
+    await pages.click();
+    await expect(page.getByRole("complementary",{name:"Page navigator"})).toHaveCount(0);
+    if ([360,390,820,844,1024,1536].includes(width)) {
+      await page.screenshot({path:info.outputPath(`notes-editor-${width}x${height}.png`)});
+    }
+  }
+  await page.getByRole("button",{name:"Focus",exact:true}).click();
+  await expect(page.getByLabel("Writing tools")).toHaveCount(0);
+  await expect(page.getByLabel("Writing surface")).toBeVisible();
+  await page.getByRole("button",{name:"Show tools",exact:true}).click();
+  await expect(page.getByLabel("Writing tools")).toBeVisible();
+  await page.getByRole("button",{name:"← Library",exact:true}).click();
+  await expect(notesLibrary(page)).toBeVisible();
+});
+
+test("recovered Notes remain locked until the checkpoint write is acknowledged",async({page})=>{
+  await stubNotesBridge(page,true,true);
+  await page.goto("/");
+  await page.getByRole("button",{name:"Open Notes on this device"}).click();
+  await expect(page.getByRole("heading",{name:"Recover Notes"})).toBeVisible();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  const recover=page.getByRole("button",{name:"Use recovered checkpoint"});
+  await page.evaluate(()=>{window.__failNotesSave=true;});
+  await recover.click();
+  await expect(page.getByRole("alert")).toHaveText("Fixture storage unavailable.");
+  await expect(notesLibrary(page)).toHaveCount(0);
+
+  await page.evaluate(()=>{window.__failNotesSave=false;});
+  await recover.click();
+  await page.waitForFunction(()=>typeof window.__finishNotesRecovery==="function");
+  await expect(page.getByRole("button",{name:"Saving recovered checkpoint…"})).toBeDisabled();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  await page.evaluate(()=>window.__finishNotesRecovery());
+  await expect(notesLibrary(page)).toBeVisible();
+  await expect(page.getByText("Saved on this device")).toBeVisible();
+  await page.reload();
+  await openLocalNotes(page);
+  await expect(page.getByRole("button",{name:"Archive journal",exact:true})).toBeVisible();
+});
+
 test("Notes local folders, cover image, wallpaper, trash and restore survive reload",async({page})=>{
   await stubNotesBridge(page);
   await page.goto("/");
@@ -768,6 +833,25 @@ test("Notes exports editable annotation layers into a rotated PDF copy",async({p
   await download.saveAs(info.outputPath("annotated-rotated-fixture.pdf"));
   const original=await page.evaluate(()=>Uint8Array.from(atob(sessionStorage.getItem("qa-pdf")),b=>b.charCodeAt(0)));
   expect(Buffer.from(Object.values(original))).toEqual(bytes);
+});
+
+test("notebook PDF export preserves page stationery and individual pattern colors",async({page},info)=>{
+  await stubNotesBridge(page,true);
+  await page.goto("/");
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"Open",exact:true}).click();
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByText("Paper",{exact:true}).click();
+  await page.getByRole("combobox",{name:"Template",exact:true}).selectOption("Cornell");
+  await page.getByLabel("Pattern color",{exact:true}).fill("#bf1414");
+  await page.getByRole("button",{name:"Duplicate page",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await page.getByLabel("Pattern color",{exact:true}).fill("#1433bf");
+  await expect.poll(async()=> (await notesSnapshot(page)).books.find(book=>book.pages.length===2)?.pages
+    .map(page=>[page.paper.template,page.paper.pattern])).toEqual([["Cornell",[191,20,20]],["Cornell",[20,51,191]]]);
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  const [download]=await Promise.all([page.waitForEvent("download"),page.getByRole("button",{name:"Export PDF",exact:true}).click()]);
+  await download.saveAs(info.outputPath("notebook-stationery-fixture.pdf"));
 });
 
 test("300-page image-only PDF stays readable and reports the absence of text",async({page})=>{

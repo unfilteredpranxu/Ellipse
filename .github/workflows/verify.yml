@@ -18,7 +18,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: python3 scripts/verify_site.py
   web-wasm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -54,13 +54,14 @@ jobs:
         working-directory: tests/browser
       - run: npm test
         working-directory: tests/browser
-      - name: Independently render and check the annotated PDF
+      - name: Independently render and check PDF exports
         run: |
           sudo apt-get update
           sudo apt-get install -y poppler-utils
-          artifact=$(find tests/browser/test-results -name annotated-rotated-fixture.pdf -print -quit)
-          test -n "$artifact"
-          python3 scripts/verify_notes_pdf.py "$artifact"
+          annotated=$(find tests/browser/test-results -name annotated-rotated-fixture.pdf -print -quit)
+          stationery=$(find tests/browser/test-results -name notebook-stationery-fixture.pdf -print -quit)
+          test -n "$annotated" && test -n "$stationery"
+          python3 scripts/verify_notes_pdf.py "$annotated" "$stationery"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,10 +1,10 @@
 //! Transactional local Notes storage. The caller supplies a private application directory.
 use ellipse_core::{
     artwork::valid_asset_id,
-    notes::{MAX_STATE, Vault, valid_pdf},
+    notes::{MAX_PDF, MAX_STATE, SCHEMA, Vault, valid_pdf},
 };
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -19,6 +19,11 @@ pub struct Snapshot {
     pub head: u32,
     pub vault: Vault,
     pub recovered: bool,
+}
+
+#[derive(Deserialize)]
+struct CheckpointVersion {
+    schema: u32,
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -60,25 +65,43 @@ impl Store {
     pub fn load(&self) -> Result<Snapshot> {
         let db = self.open()?;
         let mut query = sqlite(db.prepare(
-            "SELECT revision, payload, digest FROM snapshots ORDER BY revision DESC LIMIT 4",
+            "SELECT revision,
+             CASE WHEN typeof(payload) = 'blob' AND length(payload) <= ?1 THEN payload END,
+             CASE WHEN typeof(digest) = 'text' AND length(CAST(digest AS BLOB)) = 64
+             THEN CAST(digest AS BLOB) END
+             FROM snapshots ORDER BY revision DESC LIMIT 4",
         ))?;
-        let mut rows = sqlite(query.query([]))?;
+        let mut rows = sqlite(query.query([MAX_STATE]))?;
         let mut head = None;
         while let Some(row) = sqlite(rows.next())? {
             let revision: u32 = sqlite(row.get(0))?;
             let head = *head.get_or_insert(revision);
-            let data: Vec<u8> = sqlite(row.get(1))?;
-            let digest: String = sqlite(row.get(2))?;
-            if data.len() <= MAX_STATE
-                && hash(&data) == digest
-                && let Ok(vault) = serde_json::from_slice::<Vault>(&data)
-                && vault.validate().is_ok()
-            {
-                return Ok(Snapshot {
-                    head,
-                    vault,
-                    recovered: revision != head,
-                });
+            let data: Option<Vec<u8>> = sqlite(row.get(1))?;
+            let digest: Option<Vec<u8>> = sqlite(row.get(2))?;
+            let (Some(data), Some(digest)) = (data, digest) else {
+                continue;
+            };
+            if hash(&data).as_bytes() != digest {
+                continue;
+            }
+            match serde_json::from_slice::<Vault>(&data) {
+                Ok(vault) if vault.schema > SCHEMA => {
+                    return Err("These Notes require a newer version of Ellipse.".into());
+                }
+                Ok(vault) if vault.validate().is_ok() => {
+                    return Ok(Snapshot {
+                        head,
+                        vault,
+                        recovered: revision != head,
+                    });
+                }
+                Err(_)
+                    if serde_json::from_slice::<CheckpointVersion>(&data)
+                        .is_ok_and(|version| version.schema > SCHEMA) =>
+                {
+                    return Err("These Notes require a newer version of Ellipse.".into());
+                }
+                _ => {}
             }
         }
         if head.is_some() {
@@ -142,7 +165,9 @@ impl Store {
         let id = hash(bytes);
         let db = self.open()?;
         sqlite(db.execute(
-            "INSERT OR IGNORE INTO assets VALUES (?1, ?2)",
+            "INSERT INTO assets VALUES (?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET content=excluded.content
+             WHERE assets.content != excluded.content",
             params![id, bytes],
         ))?;
         Ok(id)
@@ -153,13 +178,17 @@ impl Store {
             return Err("Invalid PDF reference.".into());
         }
         let db = self.open()?;
-        let bytes: Vec<u8> = sqlite(
-            db.query_row("SELECT content FROM assets WHERE id=?1", [id], |row| {
-                row.get(0)
-            })
+        let bytes: Option<Vec<u8>> = sqlite(
+            db.query_row(
+                "SELECT CASE WHEN typeof(content) = 'blob' AND length(content) <= ?2 THEN content END
+                 FROM assets WHERE id=?1",
+                params![id, MAX_PDF],
+                |row| row.get(0),
+            )
             .optional(),
         )?
         .ok_or("The original PDF could not be found.")?;
+        let bytes = bytes.ok_or("The original PDF failed its integrity check.")?;
         if !valid_pdf(&bytes) || hash(&bytes) != id {
             return Err("The original PDF failed its integrity check.".into());
         }
@@ -320,5 +349,51 @@ mod tests {
             .execute("UPDATE assets SET content=x'00'", [])
             .unwrap();
         assert!(store.read_pdf(&id).is_err());
+        assert_eq!(store.store_pdf(pdf).unwrap(), id);
+        assert_eq!(store.read_pdf(&id).unwrap(), pdf);
+        let db = store.open().unwrap();
+        db.execute("UPDATE assets SET content=zeroblob(?1)", [MAX_PDF + 1])
+            .unwrap();
+        assert_eq!(
+            store.read_pdf(&id).unwrap_err(),
+            "The original PDF failed its integrity check."
+        );
+        assert_eq!(store.store_pdf(pdf).unwrap(), id);
+        assert_eq!(store.read_pdf(&id).unwrap(), pdf);
+    }
+
+    #[test]
+    fn skips_malformed_and_oversized_checkpoints_but_preserves_newer_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path()).unwrap();
+        let vault = Vault::default();
+        store.save(0, &vault).unwrap();
+        let db = store.open().unwrap();
+        let digest = hash(b"placeholder");
+        db.execute(
+            "INSERT INTO snapshots VALUES (2, zeroblob(?1), ?2), (3, 'text instead of a BLOB', ?2)",
+            params![MAX_STATE + 1, digest],
+        )
+        .unwrap();
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.head, 3);
+        assert!(recovered.recovered);
+        assert_eq!(recovered.vault, vault);
+
+        // A valid digest with a newer schema blocks recovery even if fields changed.
+        let future = br#"{"schema":2,"future_format":true}"#;
+        db.execute(
+            "INSERT INTO snapshots VALUES (4, ?1, ?2)",
+            params![future, hash(future)],
+        )
+        .unwrap();
+        assert_eq!(
+            store.load().err().unwrap(),
+            "These Notes require a newer version of Ellipse."
+        );
+        let count: u32 = db
+            .query_row("SELECT count(*) FROM snapshots", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 4);
     }
 }

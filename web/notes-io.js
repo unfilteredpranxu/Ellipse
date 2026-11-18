@@ -166,8 +166,9 @@ export function downloadNotebook(json, name) {
   download(json, name, "application/json");
 }
 
-export async function exportPdf(original, spec, name) {
-  const {PDFDocument, StandardFonts, rgb, degrees} = await import("/pdf-runtime/pdf-lib.mjs");
+export async function exportPdf(original, spec, stationery, name) {
+  const {PDFDocument, StandardFonts, rgb, degrees, drawObject,
+    setFillingColor, pushGraphicsState, popGraphicsState} = await import("/pdf-runtime/pdf-lib.mjs");
   const output = await PDFDocument.create();
   if (original) {
     const incoming = await PDFDocument.load(original.bytes, {updateMetadata:false});
@@ -177,10 +178,28 @@ export async function exportPdf(original, spec, name) {
   const fonts = await Promise.all([StandardFonts.Helvetica,StandardFonts.HelveticaBold,
     StandardFonts.HelveticaOblique,StandardFonts.HelveticaBoldOblique].map(font => output.embedFont(font)));
   const color = values => rgb(...values.map(n => n/255));
+  const stationeryForms = new Map();
   for (let i=0; i<spec.length; i++) {
     const layer = spec[i];
     const page = original ? output.getPage(i) : output.addPage([layer.width,layer.height]);
-    if (!original) page.drawRectangle({x:0,y:0,width:layer.width,height:layer.height,color:color(layer.background)});
+    if (!original) {
+      page.drawRectangle({x:0,y:0,width:layer.width,height:layer.height,color:color(layer.background)});
+      if (!stationeryForms.has(layer.stationery)) {
+        // Reuse the compressed vector pattern on pages with matching geometry.
+        const marks = stationery(i);
+        const data = marks.map(([x,y,w,h]) => [x,layer.height-y-h,w,h]
+          .map(value => value.toFixed(4)).join(" ") + " re").join("\n");
+        const form = data ? output.context.register(output.context.flateStream(data + "\nf", {
+          Type:"XObject", Subtype:"Form", BBox:[0,0,layer.width,layer.height],
+        })) : null;
+        stationeryForms.set(layer.stationery,form);
+      }
+      const form = stationeryForms.get(layer.stationery);
+      if (form) {
+        const key = page.node.newXObject("EllipsePaper",form);
+        page.pushOperators(pushGraphicsState(),setFillingColor(color(layer.pattern)),drawObject(key),popGraphicsState());
+      }
+    }
     for (const mark of layer.ink) {
       if (mark.points.length < 3) continue;
       const path=mark.points.map(([x,y],index) => `${index ? "L" : "M"}${x.toFixed(4)} ${(-y).toFixed(4)}`).join(" ")+" Z";
