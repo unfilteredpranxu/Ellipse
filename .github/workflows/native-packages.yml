@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/native-packages.yml'
+      - 'native/src-tauri/**'
   workflow_dispatch:
     inputs:
       platform:

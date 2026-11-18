@@ -46,3 +46,11 @@ In the browser, the Presets panel can back up or restore those snapshots using t
 To run the Chromium acceptance tests from a built checkout, run `bash scripts/build-pages.sh`, then run `npm ci`, `npx playwright install chromium`, and `npm test` from `tests/browser`. Set `CHROMIUM_PATH` to use a system Chromium. The tests stub the Firebase and Drive endpoints and exercise the actual release WASM. Live Google account and native-device tests need their respective environments.
 
 For the production workspace, set the Cloudflare Pages Git build to branch `main`, repository root, build command `bash scripts/build-pages.sh`, and output directory `dist`. The `site/` folder contains legacy landing and diagnostic files. Serving it directly leaves users on the old account screen after login. The production build includes a retirement worker at `/sw.js` to clear old Ellipse shell caches without clearing Firebase sessions.
+
+### Local artwork and Tablet palettes
+
+Use the image control on a block to choose a photo, reuse another assigned image, or reframe the original. Apply commits the selection. The Artwork panel can restore all original block images after confirmation. Edit Wallpaper in Settings to change the separate workspace background.
+
+Illustrations are scoped to the signed-in account. The browser stores image binaries in IndexedDB and retains originals. Large JPEG, PNG, and compatible HEIC photos can use a separate display copy. Tauri uses the app's local data directory through the shared editor. Images are limited to 24 MiB and 50 megapixels. HEIC decoding depends on the device. New image selections stay local, including when backing up preset settings. Existing saved wallpapers continue to load. Presets on this device can refer to local wallpaper, while block images remain independently assigned.
+
+Tablet can sample wallpaper colors locally and limits wallpaper opacity to protect reading contrast. Its Palette panel offers generation, preview, copyable HEX swatches, and reset. New Tab and Magazine retain their dark palettes.

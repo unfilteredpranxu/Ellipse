@@ -314,7 +314,6 @@ dependencies = [
 name = "ellipse-web"
 version = "0.1.0"
 dependencies = [
- "base64",
  "console_error_panic_hook",
  "ellipse-core",
  "js-sys",

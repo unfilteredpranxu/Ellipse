@@ -1,3 +1,4 @@
+use crate::artwork::{valid_asset_id, Frame, TabletTheme};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -211,12 +212,13 @@ pub struct Tile {
     pub visible: bool,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Wallpaper {
     #[default]
     Plain,
     Artwork,
     Photo(String),
+    Local(String),
 }
 
 pub const MAX_WALLPAPER_BYTES: usize = 512 * 1024;
@@ -229,6 +231,8 @@ pub struct Appearance {
     pub clock: Clock,
     pub wallpaper: Wallpaper,
     pub wallpaper_opacity: u8,
+    pub wallpaper_frame: Frame,
+    pub tablet_theme: TabletTheme,
     pub panel_opacity: u8,
     pub zoom: u16,
     pub gap: u8,
@@ -242,6 +246,8 @@ impl Default for Appearance {
             clock: Clock::default(),
             wallpaper: Wallpaper::Plain,
             wallpaper_opacity: 18,
+            wallpaper_frame: Frame::default(),
+            tablet_theme: TabletTheme::default(),
             panel_opacity: 94,
             zoom: 260,
             gap: 13,
@@ -266,10 +272,15 @@ impl Appearance {
         self.zoom = self.zoom.clamp(100, 320);
         self.gap = self.gap.clamp(8, 24);
         self.tone = self.tone.min(40);
-        if let Wallpaper::Photo(uri) = &self.wallpaper {
-            if !valid_wallpaper(uri) {
-                self.wallpaper = Wallpaper::Plain;
-            }
+        self.wallpaper_frame.normalize();
+        let valid = match &self.wallpaper {
+            Wallpaper::Photo(uri) => valid_wallpaper(uri),
+            Wallpaper::Local(id) => valid_asset_id(id),
+            _ => true,
+        };
+        if !valid {
+            self.wallpaper = Wallpaper::Plain;
+            self.tablet_theme.palette = None;
         }
         let mut unique = Vec::<Tile>::with_capacity(Block::ALL.len());
         for tile in self.tiles.drain(..).chain(Self::default().tiles) {

@@ -1,23 +1,30 @@
 use crate::{
+    artwork_editor::{ArtworkLibrary, Editor, Target, ThemeEditor},
     auth::{self, Account},
     clock::{ClockFace, device_time},
+    media::{ART, ART_ALT, frame_style, palette_from, source_url, tablet_tokens},
     settings::{
         ClockSettings, ClockSliders, FontChoices, LayoutSettings, LiveSliders, PresetSettings,
         Slider, Workspace,
     },
 };
-use ellipse_core::home::{Appearance, Block, BlockSize, Mode, Wallpaper};
+use ellipse_core::{
+    artwork::Slot,
+    home::{Appearance, Block, BlockSize, Mode, Wallpaper},
+};
 use leptos::{html, prelude::*};
 
-const ART: &str = "/assets/ellipse-knight-clean.jpg";
-const ART_ALT: &str = "Black-and-white stippled knight with raised sword";
-
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Panel {
     Clock,
     Layout,
     Presets,
     Artwork,
+    EditArtwork(Slot),
+    Wallpaper,
+    Theme,
     Account,
 }
 
@@ -27,7 +34,10 @@ impl Panel {
             Self::Clock => "Clock customisation",
             Self::Layout => "Appearance",
             Self::Presets => "Presets",
-            Self::Artwork => "Knight artwork",
+            Self::Artwork => "Workspace artwork",
+            Self::EditArtwork(slot) => slot.label(),
+            Self::Wallpaper => "Workspace wallpaper",
+            Self::Theme => "Tablet palette",
             Self::Account => "Google account",
         }
     }
@@ -36,17 +46,59 @@ impl Panel {
 #[component]
 pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
     let state = Workspace::new(account.uid);
+    provide_context(state);
     let panel = RwSignal::new(None::<Panel>);
+    let close = Callback::new(move |()| panel.set(None));
+    let panel_signal = panel;
     let modal = NodeRef::<html::Dialog>::new();
     let now = device_time();
     let mode = Memo::new(move |_| state.preferences.with(|p| p.mode));
     let light = move || mode.get() == Mode::Tablet;
-    let wallpaper = Memo::new(move |_| {
-        state.preferences.with(|p| match &p.appearance.wallpaper {
-            Wallpaper::Plain => None,
-            Wallpaper::Artwork => Some(ART.to_owned()),
-            Wallpaper::Photo(image) => Some(image.clone()),
+    let wallpaper = Memo::new(move |_| state.preferences.with(|p| p.appearance.wallpaper.clone()));
+    let wallpaper_url = source_url(state, wallpaper, false, state.status);
+    let need_palette = Memo::new(move |_| {
+        state.preferences.with(|p| {
+            p.mode == Mode::Tablet
+                && p.appearance.tablet_theme.automatic
+                && p.appearance.tablet_theme.palette.is_none()
         })
+    });
+    Effect::new(move |_| {
+        if !need_palette.get() {
+            return;
+        }
+        let Some(url) = wallpaper_url.get() else {
+            return;
+        };
+        let source = wallpaper.get();
+        spawn_local(async move {
+            let result = palette_from(url.clone()).await;
+            if need_palette.try_get() != Some(true)
+                || wallpaper_url.try_get().flatten().as_deref() != Some(url.as_str())
+                || wallpaper.try_get().as_ref() != Some(&source)
+            {
+                return;
+            }
+            match result {
+                Ok(palette) => {
+                    state.save_appearance(|look| look.tablet_theme.palette = Some(palette));
+                }
+                Err(error) => {
+                    let _ = state.status.try_set(error);
+                }
+            }
+        });
+    });
+    let tablet_palette = Memo::new(move |_| {
+        light()
+            .then(|| {
+                state.theme_preview.get().or_else(|| {
+                    state
+                        .preferences
+                        .with(|p| p.appearance.tablet_theme.palette)
+                })
+            })
+            .flatten()
     });
     Effect::new(move |_| {
         if let Some(dialog) = modal.get() {
@@ -60,15 +112,22 @@ pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
     let name = StoredValue::new(account.name);
     let email = StoredValue::new(account.email);
     view! {
-        <div class:workspace=true class:workspace-light=light
+        <div class:workspace=true class:workspace-light=light class:workspace-themed=move || tablet_palette.with(Option::is_some)
             style=move || state.preferences.with(|p| {
                 let a = &p.appearance;
-                format!("--gap:{}px;--panel-opacity:{}%;--tone:{}%;--detail-zoom:{};--wall-opacity:{}%",
-                    a.gap, a.panel_opacity, a.tone, f64::from(a.zoom) / 100.0, a.wallpaper_opacity)
+                let opacity = if p.mode == Mode::Tablet { a.wallpaper_opacity.min(20) } else { a.wallpaper_opacity };
+                let mut style = format!("--gap:{}px;--panel-opacity:{}%;--tone:{}%;--detail-zoom:{};--wall-opacity:{}%;",
+                    a.gap, a.panel_opacity, a.tone, f64::from(a.zoom) / 100.0, opacity);
+                if let Some(palette) = tablet_palette.get() {
+                    style.push_str(&tablet_tokens(palette, a.wallpaper_opacity));
+                }
+                style
             })>
-            {move || wallpaper.get().map(|src| view! {
-                <img class="workspace-wallpaper" src=src alt="" aria-hidden="true"/>
-            })}
+            <div class="workspace-wallpaper" aria-hidden="true">
+                {move || wallpaper_url.get().map(|src| view! {
+                    <img src=src alt="" style=move || state.preferences.with(|p| frame_style(p.appearance.wallpaper_frame))/>
+                })}
+            </div>
             <div class="workspace-inner">
                 <header class="workspace-nav">
                     <a class="workspace-brand" href="#workspace-main"><span class="ellipse-mark" aria-hidden="true"></span>"Ellipse"</a>
@@ -94,7 +153,7 @@ pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
                     {move || state.status.get()}
                 </p>
                 <dialog class="workspace-dialog" node_ref=modal aria-labelledby="panel-title"
-                    on:close=move |_| panel.set(None)>
+                    on:cancel=move |event: web_sys::Event| { event.prevent_default(); panel.set(None); }>
                     <div class="panel-heading">
                         <h2 id="panel-title">{move || panel.get().map(Panel::label)}</h2>
                         <button type="button" class="home-button icon-button" aria-label="Close panel" autofocus=true
@@ -108,13 +167,17 @@ pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
                             </div>
                             <ClockSettings state/>
                         }.into_any(),
-                        Panel::Layout => view! { <LayoutSettings state/> }.into_any(),
-                        Panel::Presets => view! { <PresetSettings state/> }.into_any(),
-                        Panel::Artwork => view! {
-                            <img class="artwork-original" src=ART width="3344" height="1883" alt=ART_ALT/>
-                            <p class="quiet">"Original monochrome artwork"</p>
-                            <a class="home-button" href=ART download="ellipse-knight.jpg"><Icon name="download"/>"Download artwork"</a>
+                        Panel::Layout => view! {
+                            <LayoutSettings state edit_wallpaper=Callback::new(move |()| {
+                                state.preview_ratio.set(1.65);
+                                panel_signal.set(Some(Panel::Wallpaper));
+                            })/>
                         }.into_any(),
+                        Panel::Presets => view! { <PresetSettings state/> }.into_any(),
+                        Panel::Artwork => view! { <ArtworkLibrary state/> }.into_any(),
+                        Panel::EditArtwork(slot) => view! { <Editor state target=Target::Block(slot) close/> }.into_any(),
+                        Panel::Wallpaper => view! { <Editor state target=Target::Wallpaper close/> }.into_any(),
+                        Panel::Theme => view! { <ThemeEditor state close/> }.into_any(),
                         Panel::Account => view! {
                             <div class="account-information">
                                 <strong>{name.get_value()}</strong><span>{email.get_value()}</span>
@@ -181,16 +244,38 @@ fn Icon(name: &'static str) -> impl IntoView {
 #[component]
 fn Art(
     class: &'static str,
+    art_slot: Slot,
     #[prop(default = "")] crop: &'static str,
     #[prop(default = false)] lazy: bool,
     panel: RwSignal<Option<Panel>>,
 ) -> impl IntoView {
+    let state = expect_context::<Workspace>();
+    let assignment = Memo::new(move |_| state.artworks.with(|items| items.get(&art_slot).cloned()));
+    let source = Memo::new(move |_| {
+        assignment.with(|item| {
+            item.as_ref()
+                .and_then(|item| item.asset.clone())
+                .map_or(Wallpaper::Artwork, Wallpaper::Local)
+        })
+    });
+    let image_url = source_url(state, source, true, state.status);
     view! {
-        <figure class=format!("art-tile {class} {crop}")>
-            <img src=ART alt=ART_ALT width="3344" height="1883"
-                decoding="async" loading=if lazy {"lazy"} else {"eager"}/>
-            <button type="button" class="art-open icon-button" aria-label="View original artwork"
-                on:click=move |_| panel.set(Some(Panel::Artwork))><Icon name="arrow"/></button>
+        <figure class=format!("art-tile {class} {crop}") data-artwork=art_slot.label()>
+            <img src=move || image_url.get().unwrap_or_else(|| ART.into())
+                alt=move || if source.with(|source| matches!(source, Wallpaper::Artwork)) { ART_ALT } else { "Custom workspace artwork" }
+                width="3344" height="1883" decoding="async" loading=if lazy {"lazy"} else {"eager"}
+                style=move || assignment.with(|item| item.as_ref().map(|item| frame_style(item.frame)).unwrap_or_default())/>
+            <button type="button" class="art-open icon-button" aria-label=format!("Edit {} artwork", art_slot.label())
+                title=format!("Edit {}", art_slot.label())
+                on:click=move |event: web_sys::MouseEvent| {
+                    let ratio = event.current_target().and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+                        .and_then(|button| button.parent_element()).map(|figure| {
+                            let rect = figure.get_bounding_client_rect();
+                            (rect.width() / rect.height().max(1.0)).clamp(0.52, 4.0)
+                        }).unwrap_or(1.6);
+                    state.preview_ratio.set(ratio);
+                    panel.set(Some(Panel::EditArtwork(art_slot)));
+                }><Icon name="image"/></button>
         </figure>
     }
 }
@@ -249,7 +334,7 @@ fn Bento(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>) -
                                         <ClockFace state now/>
                                     </section>
                                 }.into_any(),
-                                Block::Hero => view! { <Art class="bento-hero" panel/> }.into_any(),
+                                Block::Hero => view! { <Art class="bento-hero" art_slot=Slot::NewTabHero panel/> }.into_any(),
                                 Block::ClockControls => view! {
                                     <section class="panel clock-controls-tile">
                                         <div class="tile-heading">
@@ -268,7 +353,7 @@ fn Bento(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>) -
                                     <section class="panel intro-tile">
                                         <div class="tile-heading"><h2 class="eyebrow">"Ellipse · New Tab"</h2><OpenPanel panel target=Panel::Layout icon="arrow" label="Customise workspace"/></div>
                                         <p class="intro-title">"Your space,"<br/><span>"refined."</span></p>
-                                        <p class="quiet">"Make this workspace yours with a clock, artwork and saved layouts."</p>
+                                        <p class="quiet">"Artwork, local time and saved layouts."</p>
                                     </section>
                                 }.into_any(),
                                 Block::Presets => view! {
@@ -290,7 +375,7 @@ fn Bento(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>) -
                                             change=Callback::new(move |v| state.preferences.update(|p| p.appearance.tone = v as u8)) state/>
                                     </section>
                                 }.into_any(),
-                                Block::Detail => view! { <Art class="bento-detail" crop="crop-detail" lazy=true panel/> }.into_any(),
+                                Block::Detail => view! { <Art class="bento-detail" art_slot=Slot::NewTabDetail crop="crop-detail" lazy=true panel/> }.into_any(),
                             }}
                         </div>
                     }
@@ -339,7 +424,7 @@ fn EditorialRail(
             {if magazine {
                 view! {
                     <h2>"Your space,"<br/><span>"refined."</span></h2>
-                    <p class="quiet">"A customisable workspace with artwork and layouts you can make your own."</p>
+                    <p class="quiet">"Personal artwork and layouts, saved on this device."</p>
                 }.into_any()
             } else {
                 view! { <h2>"A personal space for focus, creation and collection."</h2> }.into_any()
@@ -369,19 +454,24 @@ fn EditorialRail(
 fn Tablet(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>) -> impl IntoView {
     view! {
         <section class="tablet-layout">
-            <p class="edition-line eyebrow"><span>"Your Ellipse"</span><span>"Tablet mode"</span></p>
+            <div class="tablet-edition">
+                <p class="edition-line eyebrow"><span>"Your Ellipse"</span><span>"Tablet mode"</span></p>
+                <button type="button" class="tablet-palette-button" on:click=move |_| panel.set(Some(Panel::Theme))>
+                    <Icon name="contrast"/>"Palette"
+                </button>
+            </div>
             <h1 class="tablet-title">"Your Space, Refined."</h1>
             <div class="tablet-grid">
                 <EditorialRail state panel magazine=false/>
                 <div class="tablet-art-grid">
-                    <Art class="tablet-feature" panel/>
-                    <Art class="tablet-detail" crop="crop-detail" panel/>
+                    <Art class="tablet-feature" art_slot=Slot::TabletFeature panel/>
+                    <Art class="tablet-detail" art_slot=Slot::TabletDetail crop="crop-detail" panel/>
                     <section class="panel editorial-clock">
                         <div class="tile-heading"><h2 class="eyebrow">"Local time"</h2><OpenPanel panel target=Panel::Clock icon="arrow" label="Customise local time"/></div>
                         <ClockFace state now compact=true/>
                     </section>
-                    <Art class="tablet-small-a" crop="crop-helmet" lazy=true panel/>
-                    <Art class="tablet-small-b" crop="crop-orb" lazy=true panel/>
+                    <Art class="tablet-small-a" art_slot=Slot::TabletHelmet crop="crop-helmet" lazy=true panel/>
+                    <Art class="tablet-small-b" art_slot=Slot::TabletOrb crop="crop-orb" lazy=true panel/>
                 </div>
             </div>
         </section>
@@ -396,10 +486,10 @@ fn Magazine(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>
             <div class="magazine-grid">
                 <EditorialRail state panel magazine=true/>
                 <div class="magazine-art-grid">
-                    <Art class="magazine-feature" panel/>
-                    <Art class="magazine-detail" crop="crop-detail" panel/>
-                    <Art class="magazine-small-a" crop="crop-helmet" lazy=true panel/>
-                    <Art class="magazine-small-b" crop="crop-orb" lazy=true panel/>
+                    <Art class="magazine-feature" art_slot=Slot::MagazineFeature panel/>
+                    <Art class="magazine-detail" art_slot=Slot::MagazineDetail crop="crop-detail" panel/>
+                    <Art class="magazine-small-a" art_slot=Slot::MagazineHelmet crop="crop-helmet" lazy=true panel/>
+                    <Art class="magazine-small-b" art_slot=Slot::MagazineOrb crop="crop-orb" lazy=true panel/>
                 </div>
             </div>
             <div class="magazine-footer">
@@ -409,11 +499,12 @@ fn Magazine(state: Workspace, panel: RwSignal<Option<Panel>>, now: RwSignal<i64>
                 </section>
                 <section class="panel magazine-module">
                     <div class="tile-heading"><h2 class="eyebrow">"Your workspace"</h2><OpenPanel panel target=Panel::Layout icon="arrow" label="Open appearance settings"/></div>
-                    <div><p>"Make it"<br/><span>"your own."</span></p><img src=ART alt="" loading="lazy"/></div>
+                    <div><p>"Appearance"<br/><span>"Wallpaper & layout"</span></p>
+                        <Art class="module-art" art_slot=Slot::MagazineWorkspace lazy=true panel/></div>
                 </section>
                 <section class="panel magazine-module">
                     <div class="tile-heading"><h2 class="eyebrow">"Saved presets"</h2><OpenPanel panel target=Panel::Presets icon="arrow" label="Manage presets"/></div>
-                    <div><img src=ART alt="" loading="lazy"/><p>{move || state.presets.with(Vec::len)}<br/><span>"On this device"</span></p></div>
+                    <div><Art class="module-art" art_slot=Slot::MagazinePresets lazy=true panel/><p>{move || state.presets.with(Vec::len)}<br/><span>"On this device"</span></p></div>
                 </section>
             </div>
         </section>

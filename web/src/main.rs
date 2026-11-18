@@ -1,6 +1,8 @@
+mod artwork_editor;
 mod auth;
 mod clock;
 mod home;
+mod media;
 mod settings;
 
 use auth::Session;

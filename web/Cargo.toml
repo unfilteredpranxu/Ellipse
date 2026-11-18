@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 leptos = { version = "0.8.23", features = ["csr"] }
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Window", "CustomEvent", "Event", "EventTarget", "Storage", "File", "FileList", "HtmlInputElement", "HtmlDialogElement"] }
+web-sys = { version = "0.3", features = ["Window", "CustomEvent", "Event", "EventTarget", "Storage", "File", "FileList", "HtmlInputElement", "HtmlDialogElement", "DragEvent", "DataTransfer", "DomRect", "Element"] }
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 ellipse-core = { path = "../crates/ellipse-core" }
@@ -17,4 +17,3 @@ serde_json = "1"
 serde = "1"
 send_wrapper = "0.6"
 wasm-bindgen-futures = "0.4"
-base64 = "0.22"

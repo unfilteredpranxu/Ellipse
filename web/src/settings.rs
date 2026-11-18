@@ -1,8 +1,9 @@
 use crate::auth;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use crate::media::Library;
+use ellipse_core::artwork::{Artworks, Palette, normalize_artworks};
 use ellipse_core::home::{
     Alignment, Appearance, Block, BlockSize, Clock, DateStyle, MAX_PRESET_BYTES, MAX_PRESETS,
-    MAX_WALLPAPER_BYTES, Preferences, Preset, Wallpaper, normalize_presets,
+    Preferences, Preset, Wallpaper, normalize_presets,
 };
 use leptos::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -14,6 +15,10 @@ pub struct Workspace {
     pub presets: RwSignal<Vec<Preset>>,
     pub status: RwSignal<String>,
     pub drive_busy: RwSignal<bool>,
+    pub artworks: RwSignal<Artworks>,
+    pub library: Library,
+    pub theme_preview: RwSignal<Option<Palette>>,
+    pub preview_ratio: RwSignal<f64>,
     uid: StoredValue<String>,
 }
 
@@ -38,11 +43,17 @@ impl Workspace {
         preferences.appearance.normalize();
         let mut presets = load::<Vec<Preset>>(&uid, "presets").unwrap_or_default();
         normalize_presets(&mut presets);
+        let mut artworks = load::<Artworks>(&uid, "artwork").unwrap_or_default();
+        normalize_artworks(&mut artworks);
         Self {
             preferences: RwSignal::new(preferences),
             presets: RwSignal::new(presets),
             status: RwSignal::new(String::new()),
             drive_busy: RwSignal::new(false),
+            artworks: RwSignal::new(artworks),
+            library: Library::new(&uid),
+            theme_preview: RwSignal::new(None),
+            preview_ratio: RwSignal::new(1.6),
             uid: StoredValue::new(uid),
         }
     }
@@ -77,6 +88,34 @@ impl Workspace {
         self.persist();
     }
 
+    pub fn save_artwork(self, change: impl FnOnce(&mut Artworks)) -> bool {
+        let Some(mut items) = self.artworks.try_get() else {
+            return false;
+        };
+        change(&mut items);
+        if let Ok(json) = serde_json::to_string(&items)
+            && self.write("artwork", &json)
+        {
+            self.artworks.try_set(items).is_none()
+        } else {
+            false
+        }
+    }
+
+    pub fn save_appearance(self, change: impl FnOnce(&mut Appearance)) -> bool {
+        let Some(mut settings) = self.preferences.try_get() else {
+            return false;
+        };
+        change(&mut settings.appearance);
+        if let Ok(json) = serde_json::to_string(&settings)
+            && self.write("appearance", &json)
+        {
+            self.preferences.try_set(settings).is_none()
+        } else {
+            false
+        }
+    }
+
     pub fn clock(self, change: impl FnOnce(&mut Clock)) {
         self.appearance(|look| {
             change(&mut look.clock);
@@ -98,7 +137,17 @@ impl Workspace {
             return;
         }
         let payload = if save {
-            match self.presets.with_untracked(serde_json::to_string) {
+            match self.presets.with_untracked(|presets| {
+                let mut portable = presets.clone();
+                for preset in &mut portable {
+                    let look = &mut preset.settings.appearance;
+                    if matches!(look.wallpaper, Wallpaper::Photo(_) | Wallpaper::Local(_)) {
+                        look.wallpaper = Wallpaper::Plain;
+                        look.tablet_theme.palette = None;
+                    }
+                }
+                serde_json::to_string(&portable)
+            }) {
                 Ok(json) => Some(json),
                 Err(_) => {
                     self.status.set("Could not read your local presets.".into());
@@ -123,6 +172,28 @@ impl Workspace {
                 {
                     Some(mut presets) => {
                         normalize_presets(&mut presets);
+                        // Keep local wallpaper assignments when restoring a settings-only backup.
+                        let Some(local) = self.presets.try_get() else {
+                            return;
+                        };
+                        for preset in &mut presets {
+                            let look = &mut preset.settings.appearance;
+                            if !matches!(look.wallpaper, Wallpaper::Plain) {
+                                continue;
+                            }
+                            if let Some(saved) =
+                                local.iter().find(|saved| saved.name == preset.name)
+                                && matches!(
+                                    saved.settings.appearance.wallpaper,
+                                    Wallpaper::Photo(_) | Wallpaper::Local(_)
+                                )
+                            {
+                                let saved = &saved.settings.appearance;
+                                look.wallpaper = saved.wallpaper.clone();
+                                look.wallpaper_frame = saved.wallpaper_frame;
+                                look.tablet_theme = saved.tablet_theme;
+                            }
+                        }
                         if !self.save_presets(presets) {
                             return;
                         }
@@ -296,62 +367,13 @@ pub fn LiveSliders(state: Workspace) -> impl IntoView {
 }
 
 #[component]
-pub fn LayoutSettings(state: Workspace) -> impl IntoView {
+pub fn LayoutSettings(state: Workspace, edit_wallpaper: Callback<()>) -> impl IntoView {
     view! {
         <div class="settings-stack">
-            <div class="settings-fields">
-                <label>"Wallpaper"
-                    <select prop:value=move || state.preferences.with(|p| match p.appearance.wallpaper {
-                        Wallpaper::Plain => "plain", Wallpaper::Artwork => "artwork", Wallpaper::Photo(_) => "photo"
-                    }) on:change=move |ev| {
-                        let next = event_target_value(&ev);
-                        if next != "photo" {
-                            state.appearance(|look| look.wallpaper = if next == "artwork" { Wallpaper::Artwork } else { Wallpaper::Plain });
-                        }
-                    }>
-                        <option value="plain">"Plain"</option><option value="artwork">"Knight artwork"</option>
-                        <option value="photo" disabled=true>"Uploaded photo"</option>
-                    </select>
-                </label>
-                <label>"Upload wallpaper (up to 512 KiB)"
-                    <input type="file" accept="image/jpeg,image/png,image/webp" on:change=move |ev| {
-                        let input = event_target::<web_sys::HtmlInputElement>(&ev);
-                        let Some(file) = input.files().and_then(|files| files.get(0)) else { return; };
-                        input.set_value("");
-                        let kind = file.type_();
-                        if !matches!(kind.as_str(), "image/jpeg" | "image/png" | "image/webp")
-                            || file.size() == 0.0 || file.size() > MAX_WALLPAPER_BYTES as f64 {
-                            state.status.set("Choose a JPEG, PNG, or WebP image up to 512 KiB.".into());
-                            return;
-                        }
-                        spawn_local(async move {
-                            match JsFuture::from(file.array_buffer()).await {
-                                Ok(buffer) => {
-                                    let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-                                    let valid = match kind.as_str() {
-                                        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
-                                        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-                                        "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
-                                        _ => false,
-                                    };
-                                    if !valid {
-                                        let _ = state.status.try_set("The wallpaper does not match its image format.".into());
-                                        return;
-                                    }
-                                    let photo = Wallpaper::Photo(format!("data:{kind};base64,{}", STANDARD.encode(bytes)));
-                                    if state.preferences.try_update(|p| p.appearance.wallpaper = photo).is_some() {
-                                        state.persist();
-                                    }
-                                }
-                                Err(_) => { let _ = state.status.try_set("Could not read the wallpaper.".into()); }
-                            }
-                        });
-                    }/>
-                </label>
+            <div class="appearance-row">
+                <span>"Wallpaper"</span>
+                <button type="button" class="home-button" on:click=move |_| edit_wallpaper.run(())>"Edit wallpaper"</button>
             </div>
-            <Slider label="Wallpaper opacity" low=0 high=45 unit="%"
-                value=Signal::derive(move || state.preferences.with(|p| p.appearance.wallpaper_opacity.into()))
-                change=Callback::new(move |v| state.preferences.update(|p| p.appearance.wallpaper_opacity = v as u8)) state/>
             <LiveSliders state/>
             <Slider label="Panel spacing" low=8 high=24 unit=" px"
                 value=Signal::derive(move || state.preferences.with(|p| p.appearance.gap.into()))
@@ -458,7 +480,7 @@ pub fn PresetSettings(state: Workspace) -> impl IntoView {
             <Show when=|| !auth::is_native()>
                 <section class="drive-settings" aria-label="Google Drive backup">
                     <p class="eyebrow">"Google Drive"</p>
-                    <p class="quiet">"Back up your named presets in Ellipse’s private app folder. Google will ask for access."</p>
+                    <p class="quiet">"Back up preset settings in Ellipse’s private Drive folder. Personal images stay on this device."</p>
                     <div class="home-button-group">
                         <button type="button" class="home-button" disabled=move || state.drive_busy.get() || state.presets.with(Vec::is_empty)
                             on:click=move |_| { restoring.set(false); backing_up.set(true); }>"Back up presets"</button>

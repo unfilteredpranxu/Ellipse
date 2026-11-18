@@ -1,6 +1,7 @@
 //! Ellipse proprietary application core.
 //! This crate is intentionally platform-independent and has no web or OS dependencies.
 
+pub mod artwork;
 pub mod home;
 /// Our functional features are never enabled based on a client-side boolean alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
