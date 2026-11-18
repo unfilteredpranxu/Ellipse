@@ -1,0 +1,17 @@
+[package]
+name = "ellipse-native"
+version = "0.1.0"
+description = "Ellipse proprietary native shell for Windows and Android"
+authors = ["Ellipse"]
+edition = "2021"
+license = "LicenseRef-Ellipse-Proprietary"
+
+[lib]
+name = "ellipse_native_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
