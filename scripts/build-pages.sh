@@ -7,6 +7,7 @@ if ! command -v cargo >/dev/null; then
 fi
 rustup target add wasm32-unknown-unknown
 if ! command -v trunk >/dev/null; then cargo install trunk --locked; fi
+node scripts/stage-notes-pdf.mjs
 mkdir -p web/assets
 cp -R site/assets/. web/assets/
 (cd web && trunk build --release --locked --dist ../dist)

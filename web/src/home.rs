@@ -44,7 +44,11 @@ impl Panel {
 }
 
 #[component]
-pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
+pub fn Home(
+    account: Account,
+    message: RwSignal<String>,
+    open_notes: Callback<()>,
+) -> impl IntoView {
     let state = Workspace::new(account.uid);
     provide_context(state);
     let panel = RwSignal::new(None::<Panel>);
@@ -133,6 +137,7 @@ pub fn Home(account: Account, message: RwSignal<String>) -> impl IntoView {
                     <a class="workspace-brand" href="#workspace-main"><span class="ellipse-mark" aria-hidden="true"></span>"Ellipse"</a>
                     <nav class="workspace-menu" aria-label="Workspace">
                         <ModeSelector state/>
+                        <button class="nav-action" type="button" on:click=move |_|open_notes.run(())><Icon name="book"/>"Notes"</button>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Artwork))><Icon name="image"/>"Artwork"</button>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Presets))><Icon name="grid"/>"Presets"</button>
                         <button class="nav-action" type="button" on:click=move |_| panel.set(Some(Panel::Layout))><Icon name="settings"/>"Settings"</button>
@@ -221,6 +226,9 @@ fn ModeSelector(state: Workspace) -> impl IntoView {
 #[component]
 fn Icon(name: &'static str) -> impl IntoView {
     let path = match name {
+        "book" => {
+            "M4 4h7a2 2 0 0 1 2 2v14a4 4 0 0 0-3-1H4zM13 6a2 2 0 0 1 2-2h5v15h-4a4 4 0 0 0-3 1"
+        }
         "home" => "M3 10l9-7 9 7M5 9v11h5v-6h4v6h5V9",
         "image" => "M3 4h18v16H3zM3 17l5-5 4 4 3-3 6 5M16 9h.01",
         "grid" => "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",

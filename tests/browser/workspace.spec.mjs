@@ -477,3 +477,324 @@ test("legacy wallpaper and clock settings still load from version one", async ({
   await expect(page.locator(".workspace-wallpaper img")).toHaveAttribute("src", /^data:image\/png/);
   await expect(page.locator("[data-block=clock] .clock-period")).toHaveCount(0);
 });
+
+async function notesPdf() {
+  const {PDFDocument, StandardFonts, degrees} = await import("../../web/pdf-runtime/pdf-lib.mjs");
+  const pdf=await PDFDocument.create();
+  const font=await pdf.embedFont(StandardFonts.Helvetica);
+  for (const [index,text] of ["Ellipse field notes","Second page evidence"].entries()) {
+    const page=pdf.addPage([420,530]);
+    if (index===1) page.setRotation(degrees(90));
+    page.drawText(text,{x:48,y:440,size:22,font});
+  }
+  return Buffer.from(await pdf.save());
+}
+
+const notesLibrary = page => page.getByRole("main",{name:"Notes library"});
+const notesEditor = page => page.getByRole("main",{name:"Document editor"});
+
+test("authenticated web Notes only reads explicitly opened local PDFs", async ({page}, info) => {
+  await stubFirebase(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button",{name:"Notes",exact:true}).click();
+  await expect(notesLibrary(page)).toBeVisible();
+  await expect(page.getByRole("button",{name:"New notebook"})).toHaveCount(0);
+  await expect(notesLibrary(page).getByText(/installed library stays/)).toBeVisible();
+  const bytes=await notesPdf();
+  await page.getByLabel("Choose PDF", {exact:true}).setInputFiles({name:"Field notes.pdf",mimeType:"application/pdf",buffer:bytes});
+  await expect(notesEditor(page)).toBeVisible();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  await expect(page.getByLabel("Writing tools")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Timer",exact:true})).toHaveCount(0);
+  await expect.poll(() => page.locator(".notes-pdf").evaluate(canvas=>canvas.width)).toBeGreaterThan(300);
+  await page.getByRole("button",{name:"Next page",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await expect(page.getByRole("button",{name:"Next page",exact:true})).toBeDisabled();
+  await page.getByRole("button",{name:"Previous page",exact:true}).click();
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByRole("searchbox",{name:"Find in document"}).fill("Second page evidence");
+  await page.getByRole("button",{name:"Find",exact:true}).click();
+  await page.getByRole("button",{name:/2 · Second page evidence/}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.screenshot({path:info.outputPath("notes-web-pdf.png")});
+  const [download]=await Promise.all([page.waitForEvent("download"),page.getByRole("button",{name:"Download original"}).click()]);
+  const {readFile}=await import("node:fs/promises");
+  expect(await readFile(await download.path())).toEqual(bytes);
+  await page.getByRole("button",{name:"Library",exact:false}).click();
+  await expect(notesLibrary(page)).toBeVisible();
+  await expect(page.getByRole("button",{name:"Field notes",exact:true})).toHaveAttribute("aria-pressed","true");
+  await page.reload();
+  await page.getByRole("button",{name:"Notes",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Field notes",exact:true})).toHaveCount(0);
+});
+
+async function stubNotesBridge(page, fixtures = false) {
+  await page.addInitScript(seed => {
+    const colors=[[109,51,42],[89,79,64],[42,66,91],[148,116,77],[42,65,56],[97,64,75],[40,62,76]];
+    function initial() {
+      let next=1;
+      const books=seed ? ["Physics","Calculus","Chemistry","Fieldwork","Literature","History","Mathematics","Observations","Philosophy","Economics","Mapping","Mechanics","Archive journal"].map((title,index)=>({
+        id:next++,title,subject:"",collection:"",tags:[],color:colors[index%colors.length],cover:index%3===0?"Orbit":index%3===1?"Bands":"Cloth",
+        folder:null,favorite:false,disposition:"Active",created:index+1,modified:index+1,opened:0,page:0,zoom:100,scroll:0,
+        pen:{nib:"Ballpoint",width:3,opacity:1,color:[33,40,57],smoothing:0.23},presets:[],pdf:null,
+        pages:[{id:next++,paper:{template:"Ruled",width:612,height:792,background:[255,252,245],pattern:[189,184,174],spacing:24},ink:[],text:[],bookmarked:false}],
+      })) : [];
+      return {schema:1,next,books,folders:[],study:{active:null,history:[]},dark:false};
+    }
+    window.__TAURI_INTERNALS__={invoke:async (command,args)=>{
+      const key="qa-notes";
+      const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:0,vault:initial(),recovered:false};
+      if (command==="notes_load") return previous;
+      if (command==="notes_save") {
+        if (window.__failNotesSave) throw Error("Fixture storage unavailable.");
+        if (args.head!==previous.head) throw Error("Revision conflict.");
+        await new Promise(resolve=>setTimeout(resolve,35));
+        const head=args.head+1;
+        sessionStorage.setItem(key,JSON.stringify({head,vault:args.vault,recovered:false}));
+        return head;
+      }
+      if (command==="notes_store_pdf") {
+        const id="b".repeat(64);
+        sessionStorage.setItem("qa-pdf",args.encoded);
+        return id;
+      }
+      if (command==="store_artwork") {
+        sessionStorage.setItem(`qa-art:${args.account}:${args.key}`,args.encoded);
+        return null;
+      }
+      if (command==="read_artwork") {
+        const encoded=sessionStorage.getItem(`qa-art:${args.account}:${args.key}`);
+        if (!encoded) throw Error("Fixture artwork missing.");
+        return Uint8Array.from(atob(encoded),b=>b.charCodeAt(0));
+      }
+      if (command==="notes_read_pdf") {
+        const encoded=sessionStorage.getItem("qa-pdf");
+        if (!encoded) throw Error("Fixture PDF missing.");
+        return Uint8Array.from(atob(encoded),b=>b.charCodeAt(0));
+      }
+      throw Error("Unknown test bridge command.");
+    }};
+  },fixtures);
+}
+
+async function openLocalNotes(page) {
+  await page.getByRole("button",{name:"Open Notes on this device"}).click();
+  await expect(notesLibrary(page)).toBeVisible();
+}
+
+async function stroke(page, positions) {
+  const area=page.getByLabel("Writing surface").boundingBox();
+  const box=await area;
+  const mapped=positions.map(([x,y])=>[box.x+box.width*x,box.y+box.height*y]);
+  await page.mouse.move(...mapped[0]);
+  await page.mouse.down();
+  for (const point of mapped.slice(1)) await page.mouse.move(...point,{steps:6});
+  await page.mouse.up();
+}
+
+const notesSnapshot = page => page.evaluate(()=>JSON.parse(sessionStorage.getItem("qa-notes")).vault);
+
+test("Notes native bridge flow creates and saves vector pages, erases, recovers a failed save and logs study", async ({page},info) => {
+  test.setTimeout(90000);
+  await stubNotesBridge(page);
+  await page.goto("/");
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"New notebook",exact:true}).click();
+  await page.getByLabel("Name",{exact:true}).fill("Seminar");
+  await page.getByLabel("Subject",{exact:true}).fill("Physics");
+  await page.getByRole("button",{name:"Create notebook"}).click();
+  await page.getByRole("button",{name:"Open",exact:true}).click();
+  await expect(notesLibrary(page)).toHaveCount(0);
+  await expect(notesEditor(page).getByRole("heading",{name:"Seminar"})).toBeVisible();
+  await expect(page.getByRole("complementary",{name:"Study timer"})).toHaveCount(0);
+  await expect(page.getByLabel("Writing surface")).toBeVisible();
+  await stroke(page,[[.15,.25],[.80,.25]]);
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(1);
+  await page.getByLabel("Tool",{exact:true}).selectOption("Partial eraser");
+  await stroke(page,[[.45,.21],[.45,.31]]);
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(2);
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(1);
+  await page.getByRole("button",{name:"Redo",exact:true}).click();
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(2);
+  await page.evaluate(()=> {window.__failNotesSave=true;});
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByRole("button",{name:"Insert after",exact:true}).click();
+  await expect(page.getByText("Fixture storage unavailable.")).toBeVisible();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  expect((await notesSnapshot(page)).books[0].pages).toHaveLength(1);
+  await page.evaluate(()=> {window.__failNotesSave=false;});
+  await page.getByRole("button",{name:"Retry save"}).click();
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages.length).toBe(2);
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByRole("button",{name:"Timer",exact:true}).click();
+  await page.getByRole("button",{name:"Start timer"}).click();
+  await expect(page.getByRole("button",{name:"Finish and log"})).toBeVisible();
+  await page.getByRole("button",{name:"Timer",exact:true}).click();
+  await expect(page.getByRole("complementary",{name:"Study timer"})).toHaveCount(0);
+  await page.getByRole("button",{name:"Timer",exact:true}).click();
+  await page.getByRole("button",{name:"Finish and log"}).click();
+  await expect.poll(async()=> (await notesSnapshot(page)).study.history.length).toBe(1);
+  await page.getByRole("button",{name:"Timer",exact:true}).click();
+  await page.getByRole("button",{name:"Previous page",exact:true}).click();
+  await page.getByLabel("Tool",{exact:true}).selectOption("Rectangle selection");
+  await stroke(page,[[.10,.20],[.40,.32]]);
+  await expect(page.getByText("1 selected",{exact:true})).toBeVisible();
+  await page.getByLabel("Tool",{exact:true}).selectOption("Text");
+  await page.getByRole("textbox",{name:"Text to place"}).fill("Study question");
+  await stroke(page,[[.19,.43]]);
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].text[0]?.value).toBe("Study question");
+  await page.getByText("Edit text boxes",{exact:true}).click();
+  await page.getByLabel("Text box 1",{exact:true}).fill("An edited study question");
+  await page.getByLabel("Text box 1",{exact:true}).blur();
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].text[0]?.value).toBe("An edited study question");
+  await page.getByLabel("Tool",{exact:true}).selectOption("Ink");
+  const [backup] = await Promise.all([page.waitForEvent("download"), page.getByRole("button",{name:"Download notebook backup"}).click()]);
+  const {readFile}=await import("node:fs/promises");
+  const portable=JSON.parse(await readFile(await backup.path(),"utf8"));
+  expect(portable.version).toBe(1);
+  expect(portable.notebook.pages[0].text[0].value).toBe("An edited study question");
+  await page.screenshot({path:info.outputPath("notes-editor-desktop.png")});
+  await page.getByRole("button",{name:"← Library",exact:true}).click();
+  await expect(notesLibrary(page)).toBeVisible();
+  await page.reload();
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"Open",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("1 / 2");
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(2);
+});
+
+test("cream shelf reflows and selects real notebook fixtures on phone, tablet and desktop",async({page},info)=>{
+  test.setTimeout(60000);
+  await stubNotesBridge(page,true);
+  await page.goto("/");
+  await openLocalNotes(page);
+  for (const [width,height] of [[320,568],[360,740],[375,812],[390,844],[430,932],[768,1024],[820,1180],[1024,768],[1280,800],[1440,900],[1536,1024],[1920,1080],[844,390]]) {
+    await page.setViewportSize({width,height});
+    await expect(notesLibrary(page).getByRole("heading",{name:"My Notebooks"})).toBeVisible();
+    const results=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth}));
+    expect(results.width).toBeLessThanOrEqual(results.viewport);
+    if ([390,820,1536,844].includes(width)) {
+      await page.getByLabel("Notebooks",{exact:true}).focus();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.locator(".notes-shelf").blur();
+      await expect(page.locator(".notes-book-active")).toHaveCount(1);
+      await expect.poll(async()=> (await page.locator(".notes-book-active").boundingBox()).width).toBeGreaterThan(160);
+      await page.screenshot({path:info.outputPath(`notes-shelf-${width}.png`),fullPage:true});
+    }
+  }
+  await page.getByRole("searchbox",{name:"Search notebooks"}).fill("Fieldwork");
+  await expect(page.locator(".notes-book")).toHaveCount(1);
+  await page.getByLabel("Library layout").selectOption("list");
+  await expect(page.locator(".notes-list .notes-book")).toHaveCount(1);
+});
+
+test("Notes local folders, cover image, wallpaper, trash and restore survive reload",async({page})=>{
+  await stubNotesBridge(page);
+  await page.goto("/");
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"Folders",exact:true}).click();
+  await page.getByLabel("Folder name",{exact:true}).fill("Research");
+  await page.getByRole("button",{name:"Add folder to selected shelf"}).click();
+  await page.getByLabel("Folder name",{exact:true}).fill("Field work");
+  await page.getByRole("button",{name:"Add folder to selected shelf"}).click();
+  await expect.poll(async()=> (await notesSnapshot(page)).folders.length).toBe(2);
+  const folders=(await notesSnapshot(page)).folders;
+  expect(folders[1].parent).toBe(folders[0].id);
+  await page.getByRole("button",{name:"Close library panel"}).click();
+  await page.getByRole("button",{name:"New notebook",exact:true}).click();
+  await page.getByLabel("Name",{exact:true}).fill("Research diary");
+  await page.getByText("Cover artwork",{exact:true}).click();
+  const photo=await picture(page,"cover.png",["#60456b","#45577a","#c0a278"]);
+  await page.getByLabel("Choose cover image").setInputFiles(photo);
+  await expect(page.locator(".notes-image-preview img")).toHaveAttribute("src",/^blob:/);
+  await page.getByRole("button",{name:"Create notebook"}).click();
+  await expect(page.locator(".notes-cover-photo")).toHaveAttribute("src",/^blob:/);
+  await expect.poll(async()=> (await notesSnapshot(page)).books[0]?.folder).toBe(folders[1].id);
+
+  await page.getByRole("button",{name:"Appearance",exact:true}).click();
+  await page.getByLabel("Choose wallpaper").setInputFiles(photo);
+  await expect(page.locator(".notes-image-preview img")).toHaveAttribute("src",/^blob:/);
+  await page.getByRole("button",{name:"Apply appearance"}).click();
+  await expect(page.locator(".notes-wallpaper img")).toHaveAttribute("src",/^blob:/);
+  await expect(page.getByText("Saved on this device")).toBeVisible();
+  await page.reload();
+  await openLocalNotes(page);
+  await expect(page.locator(".notes-cover-photo")).toHaveAttribute("src",/^blob:/);
+  await expect(page.locator(".notes-wallpaper img")).toHaveAttribute("src",/^blob:/);
+
+  await page.getByRole("button",{name:"Details",exact:true}).click();
+  await page.getByLabel("Name",{exact:true}).fill("Research record");
+  await page.getByRole("button",{name:"Apply details"}).click();
+  await page.getByRole("button",{name:"Details",exact:true}).click();
+  await page.getByRole("button",{name:"Move to Recently deleted"}).click();
+  await expect(page.getByRole("button",{name:"Research record",exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"Folders",exact:true}).click();
+  await page.getByRole("button",{name:"Recently deleted",exact:true}).click();
+  await page.getByRole("button",{name:"Details",exact:true}).click();
+  await page.getByRole("button",{name:"Restore to library",exact:true}).click();
+  await page.getByRole("button",{name:"Library",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Research record",exact:true})).toBeVisible();
+});
+
+test("Notes exports editable annotation layers into a rotated PDF copy",async({page},info)=>{
+  test.setTimeout(60000);
+  await stubNotesBridge(page);
+  await page.goto("/");
+  await openLocalNotes(page);
+  const bytes=await notesPdf();
+  await page.getByLabel("Import PDF",{exact:true}).setInputFiles({name:"Rotated original.pdf",mimeType:"application/pdf",buffer:bytes});
+  await expect(notesEditor(page)).toBeVisible();
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByRole("searchbox",{name:"Find in document"}).fill("Second page evidence");
+  await page.getByRole("button",{name:"Find",exact:true}).click();
+  await page.getByRole("button",{name:"Highlight matching run"}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await expect.poll(async()=>(await notesSnapshot(page)).books[0].pages[1].ink.length).toBeGreaterThan(0);
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await stroke(page,[[.45,.22],[.72,.41],[.72,.49]]);
+  await expect.poll(async()=>(await notesSnapshot(page)).books[0].pages[1].ink.length).toBeGreaterThan(1);
+  const [download]=await Promise.all([page.waitForEvent("download"),page.getByRole("button",{name:"Export PDF",exact:true}).click()]);
+  const {readFile}=await import("node:fs/promises");
+  const {PDFDocument}=await import("../../web/pdf-runtime/pdf-lib.mjs");
+  const exported=await readFile(await download.path());
+  const doc=await PDFDocument.load(exported);
+  expect(doc.getPageCount()).toBe(2);
+  expect(doc.getPage(1).getRotation().angle).toBe(90);
+  expect(exported.equals(bytes)).toBe(false);
+  await download.saveAs(info.outputPath("annotated-rotated-fixture.pdf"));
+  const original=await page.evaluate(()=>Uint8Array.from(atob(sessionStorage.getItem("qa-pdf")),b=>b.charCodeAt(0)));
+  expect(Buffer.from(Object.values(original))).toEqual(bytes);
+});
+
+test("300-page image-only PDF stays readable and reports the absence of text",async({page})=>{
+  test.setTimeout(60000);
+  await stubFirebase(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button",{name:"Notes",exact:true}).click();
+  const {PDFDocument}=await import("../../web/pdf-runtime/pdf-lib.mjs");
+  const pdf=await PDFDocument.create();
+  const scan=await picture(page,"scan.png",["#777","#ccc","#bbb","#eee"]);
+  const image=await pdf.embedPng(scan.buffer);
+  for(let i=0;i<300;i++){
+    const sheet=pdf.addPage([420,530]);
+    sheet.drawImage(image,{x:20,y:100,width:380,height:190});
+  }
+  const start=performance.now();
+  await page.getByLabel("Choose PDF",{exact:true}).setInputFiles({
+    name:"Scanned fixture.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save()),
+  });
+  await expect(page.getByLabel("Current page")).toHaveText("1 / 300");
+  await expect.poll(()=>page.locator(".notes-pdf").evaluate(canvas=>canvas.width)).toBeGreaterThan(300);
+  console.log(`QA observation: 300-page fixture loaded and rendered in ${Math.round(performance.now()-start)} ms`);
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await page.getByRole("searchbox",{name:"Find in document"}).fill("missing text");
+  await page.getByRole("button",{name:"Find",exact:true}).click();
+  await expect(page.getByText("This PDF has no searchable text layer.")).toBeVisible({timeout:15000});
+  await page.getByRole("button",{name:"300",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("300 / 300");
+});

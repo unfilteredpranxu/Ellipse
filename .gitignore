@@ -11,3 +11,5 @@ dist/
 
 /tests/browser/test-results/
 /tests/browser/playwright-report/
+
+/web/pdf-runtime/

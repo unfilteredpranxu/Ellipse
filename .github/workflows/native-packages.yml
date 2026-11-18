@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/native-packages.yml'
       - 'native/src-tauri/**'
+      - 'crates/ellipse-notes-store/**'
+      - 'crates/ellipse-core/src/notes/**'
+      - 'web/src/notes/**'
   workflow_dispatch:
     inputs:
       platform:

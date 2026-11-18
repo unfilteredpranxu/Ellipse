@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ellipse-core"]
+members = ["crates/ellipse-core", "crates/ellipse-notes-store"]
 resolver = "2"
 
 [workspace.package]

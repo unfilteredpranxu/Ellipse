@@ -3,6 +3,7 @@
 
 pub mod artwork;
 pub mod home;
+pub mod notes;
 /// Our functional features are never enabled based on a client-side boolean alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessLevel {

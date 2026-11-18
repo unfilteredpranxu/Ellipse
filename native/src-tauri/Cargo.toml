@@ -17,6 +17,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 sha2 = "0.10"
 base64 = "0.22"
+ellipse-core = { path = "../../crates/ellipse-core" }
+ellipse-notes-store = { path = "../../crates/ellipse-notes-store" }
 
 # Keep the native Tauri package independent from the shared Rust-core workspace.
 [workspace]

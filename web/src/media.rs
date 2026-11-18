@@ -91,6 +91,15 @@ pub fn source_url(
     fallback: bool,
     report: RwSignal<String>,
 ) -> RwSignal<Option<String>> {
+    local_source_url(state.library, source, fallback, report)
+}
+
+pub fn local_source_url(
+    library: Library,
+    source: Memo<Wallpaper>,
+    fallback: bool,
+    report: RwSignal<String>,
+) -> RwSignal<Option<String>> {
     let url = RwSignal::new(None);
     Effect::new(move |_| match source.get() {
         Wallpaper::Plain => url.set(None),
@@ -98,8 +107,7 @@ pub fn source_url(
         Wallpaper::Photo(data) => url.set(Some(data)),
         Wallpaper::Local(id) => {
             url.set(if fallback { Some(ART.into()) } else { None });
-            let Some(lease) = state
-                .library
+            let Some(lease) = library
                 .0
                 .try_with_value(|library| lease_image(library, &id))
             else {

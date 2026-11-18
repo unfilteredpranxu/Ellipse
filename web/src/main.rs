@@ -3,6 +3,7 @@ mod auth;
 mod clock;
 mod home;
 mod media;
+mod notes;
 mod settings;
 
 use auth::Session;
@@ -13,6 +14,9 @@ fn App() -> impl IntoView {
     let session = RwSignal::new(Session::Checking);
     let message = RwSignal::new(String::new());
     auth::observe(session, message);
+    let notes = RwSignal::new(false);
+    let open_notes = Callback::new(move |()| notes.set(true));
+    let close_notes = Callback::new(move |()| notes.set(false));
 
     move || match session.get() {
         Session::Checking => view! {
@@ -22,16 +26,24 @@ fn App() -> impl IntoView {
             </main>
         }
         .into_any(),
-        Session::SignedOut => view! { <SignIn message/> }.into_any(),
+        Session::SignedOut if auth::is_native() && notes.get() => view! {
+            <notes::Notes local=true back=close_notes/>
+        }
+        .into_any(),
+        Session::SignedOut => view! { <SignIn message open_notes/> }.into_any(),
+        Session::SignedIn(_) if notes.get() => view! {
+            <notes::Notes local=false back=close_notes/>
+        }
+        .into_any(),
         Session::SignedIn(account) => view! {
-            <home::Home account=account message=message/>
+            <home::Home account=account message=message open_notes/>
         }
         .into_any(),
     }
 }
 
 #[component]
-fn SignIn(message: RwSignal<String>) -> impl IntoView {
+fn SignIn(message: RwSignal<String>, open_notes: Callback<()>) -> impl IntoView {
     view! {
         <main class="screen" aria-label="Ellipse welcome">
             <div class="hero-wrap">
@@ -60,6 +72,11 @@ fn SignIn(message: RwSignal<String>) -> impl IntoView {
                             </svg>
                             <span>"Continue with Google"</span>
                         </button>
+                    <Show when=auth::is_native>
+                        <button type="button" class="signin-button local-notes-button" on:click=move |_|open_notes.run(())>
+                            "Open Notes on this device"
+                        </button>
+                    </Show>
                     <p class="notice" role="status" aria-live="polite">{move || message.get()}</p>
                 </div>
             </section>

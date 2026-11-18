@@ -4,6 +4,7 @@ import {fileURLToPath} from "node:url";
 import path from "node:path";
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const web=path.join(root,"web");
+execFileSync(process.execPath,[path.join(root,"scripts","stage-notes-pdf.mjs")],{stdio:"inherit"});
 await mkdir(path.join(web,"assets"),{recursive:true});
 await cp(path.join(root,"site","assets"),path.join(web,"assets"),{recursive:true,force:true});
 execFileSync("trunk",["serve","--address","127.0.0.1","--port","5173"],{cwd:web,stdio:"inherit"});

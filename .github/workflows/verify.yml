@@ -34,6 +34,13 @@ jobs:
           tool: trunk
       - run: cargo fmt --manifest-path web/Cargo.toml --check
       - run: cargo clippy --manifest-path web/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            tests/browser/package-lock.json
+            web/pdf/package-lock.json
       - name: Compile actual Leptos Rust UI to WebAssembly
         run: bash scripts/build-pages.sh
       - name: Assert production output includes WebAssembly
@@ -41,17 +48,19 @@ jobs:
           test -s dist/index.html
           find dist -name '*.wasm' -size +1c | grep -q wasm
           test -s dist/assets/ellipse-knight-clean.jpg
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: tests/browser/package-lock.json
       - run: npm ci
         working-directory: tests/browser
       - run: npx playwright install --with-deps chromium
         working-directory: tests/browser
       - run: npm test
         working-directory: tests/browser
+      - name: Independently render and check the annotated PDF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          artifact=$(find tests/browser/test-results -name annotated-rotated-fixture.pdf -print -quit)
+          test -n "$artifact"
+          python3 scripts/verify_notes_pdf.py "$artifact"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

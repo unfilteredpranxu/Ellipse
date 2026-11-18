@@ -503,3 +503,16 @@ pub fn PresetSettings(state: Workspace) -> impl IntoView {
         </div>
     }
 }
+
+pub(crate) fn parse_color(hex: &str) -> Option<ellipse_core::artwork::Color> {
+    let digits = hex.strip_prefix('#')?;
+    if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let rgb = u32::from_str_radix(digits, 16).ok()?;
+    Some(ellipse_core::artwork::Color(
+        (rgb >> 16) as u8,
+        (rgb >> 8) as u8,
+        rgb as u8,
+    ))
+}

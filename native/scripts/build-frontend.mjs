@@ -6,6 +6,7 @@ import path from "node:path";
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const web=path.join(root,"web");
 const out=path.join(root,"native","dist");
+execFileSync(process.execPath,[path.join(root,"scripts","stage-notes-pdf.mjs")],{stdio:"inherit"});
 await mkdir(path.join(web,"assets"),{recursive:true});
 await cp(path.join(root,"site","assets"),path.join(web,"assets"),{recursive:true,force:true});
 await rm(out,{recursive:true,force:true});
