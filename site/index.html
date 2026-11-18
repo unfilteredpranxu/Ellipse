@@ -22,6 +22,11 @@
 @media(max-width:760px){.workspace-rail{width:56px;padding:17px 5px}.nav-icon{width:40px;height:40px}.workspace-top{padding:0 18px;height:68px}.session-status{font-size:8px}.workspace-content{padding:50px 18px}.workspace-content h1{font-size:43px;letter-spacing:-2px}.workspace-lede{font-size:14px}.workspace-cards{grid-template-columns:1fr;margin-top:30px;gap:14px}.workspace-card{min-height:190px}.profile-name{margin-top:25px}.workspace-actions{flex-wrap:wrap}.workspace-actions button{min-width:160px}}
 
   </style>
+  <meta name="description" content="Ellipse — offline-first personal workspace">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Ellipse">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 </head>
 <body>
   <div id="app"><div class="auth-screen">
@@ -273,5 +278,6 @@ start();
 
   </script>
 <noscript><div style="position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;padding:12px;background:#202020;color:white;border-radius:8px;text-align:center;font:13px Arial,sans-serif">This file preview does not run JavaScript. Open the HTML in a full browser for interactive features.</div></noscript>
+<script>if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>
 </html>
