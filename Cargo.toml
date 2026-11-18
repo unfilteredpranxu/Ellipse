@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/ellipse-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "LicenseRef-Ellipse-Proprietary"
