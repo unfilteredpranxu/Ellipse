@@ -29,3 +29,5 @@ button:focus-visible{outline:2px solid #fff;outline-offset:5px}
 @media(min-width:780px){.hero-art{width:min(80vw,850px);height:100%;object-fit:cover;object-position:center 42%;mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%)}.bottom{padding-bottom:55px}.signin-button{min-height:62px}.screen::after{background:linear-gradient(180deg,rgba(0,0,0,.15),transparent 55%,#050505 100%)}}
 @media(max-width:390px){.topbar{padding-top:calc(env(safe-area-inset-top) + 19px)}.bottom{padding-bottom:calc(env(safe-area-inset-bottom) + 22px)}.signin-button{min-height:54px;border-radius:16px}}
 @media(prefers-reduced-motion:reduce){.signin-button{transition:none}}
+
+[hidden]{display:none!important}

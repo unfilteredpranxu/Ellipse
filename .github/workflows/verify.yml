@@ -1,4 +1,4 @@
-name: Ellipse — verify Rust and preview
+name: Ellipse — Rust, WASM and deployment acceptance
 on:
   push:
     branches: [main]
@@ -6,12 +6,31 @@ on:
 permissions:
   contents: read
 jobs:
-  check:
+  core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate hosted M01 screen
-        run: python3 scripts/verify_site.py
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test shared Rust core
-        run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --all-targets
+      - run: python3 scripts/verify_site.py
+  web-wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: web
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Compile actual Leptos Rust UI to WebAssembly
+        run: bash scripts/build-pages.sh
+      - name: Assert production output includes WebAssembly
+        run: |
+          test -s dist/index.html
+          find dist -name '*.wasm' -size +1c | grep -q wasm
+          test -s dist/assets/ellipse-art.jpg
