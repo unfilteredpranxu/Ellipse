@@ -1,10 +1,16 @@
-import {cp, mkdir, rm} from 'node:fs/promises';
-import {execFileSync} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
-const root=fileURLToPath(new URL('../../',import.meta.url));
-execFileSync('bash',[root+'scripts/build-pages.sh'],{stdio:'inherit',cwd:root});
-const dest=fileURLToPath(new URL('../dist/',import.meta.url));
-await rm(dest,{recursive:true,force:true});
-await mkdir(dest,{recursive:true});
-await cp(root+'dist/',dest,{recursive:true});
-console.log('Ellipse: native app now uses compiled Rust Leptos/WASM UI');
+import {cp, mkdir, rm, copyFile} from "node:fs/promises";
+import {execFileSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import path from "node:path";
+
+const root=fileURLToPath(new URL("../../",import.meta.url));
+const web=path.join(root,"web");
+const out=path.join(root,"native","dist");
+await mkdir(path.join(web,"assets"),{recursive:true});
+await cp(path.join(root,"site","assets"),path.join(web,"assets"),{recursive:true,force:true});
+await rm(out,{recursive:true,force:true});
+execFileSync("trunk",["build","--release","--dist",out],{cwd:web,stdio:"inherit"});
+for(const name of ["favicon.svg","manifest.webmanifest","sw.js","_headers"]){
+  await copyFile(path.join(root,"site",name),path.join(out,name));
+}
+console.log("Ellipse native: compiled Leptos Rust WebAssembly UI ready in native/dist");

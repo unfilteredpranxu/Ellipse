@@ -4,14 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite ../site --host 127.0.0.1",
+    "dev": "node scripts/dev-frontend.mjs",
     "build": "node scripts/build-frontend.mjs",
     "icons": "tauri icon ../site/favicon.svg",
     "tauri": "tauri",
     "build:desktop": "npm run icons && tauri build"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
-    "vite": "^7.0.0"
+    "@tauri-apps/cli": "^2.0.0"
   }
 }

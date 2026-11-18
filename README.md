@@ -20,7 +20,7 @@ bash scripts/build-pages.sh
 Output: `dist/`. A Cloudflare Pages Git integration can use build command `bash scripts/build-pages.sh` with output directory `dist` after the build is validated.
 
 ## Build native applications
-Install Node.js, Rust, platform SDKs, then:
+Install Node.js, Rust, Trunk, platform SDKs, then:
 ```bash
 cd native && npm install
 npm run tauri -- build                  # Windows/macOS desktop on each respective OS

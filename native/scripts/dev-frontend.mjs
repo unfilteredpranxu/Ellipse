@@ -1,0 +1,9 @@
+import {cp, mkdir} from "node:fs/promises";
+import {execFileSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import path from "node:path";
+const root=fileURLToPath(new URL("../../",import.meta.url));
+const web=path.join(root,"web");
+await mkdir(path.join(web,"assets"),{recursive:true});
+await cp(path.join(root,"site","assets"),path.join(web,"assets"),{recursive:true,force:true});
+execFileSync("trunk",["serve","--address","127.0.0.1","--port","5173"],{cwd:web,stdio:"inherit"});
