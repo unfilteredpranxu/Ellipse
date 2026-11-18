@@ -9,7 +9,7 @@ const out=path.join(root,"native","dist");
 await mkdir(path.join(web,"assets"),{recursive:true});
 await cp(path.join(root,"site","assets"),path.join(web,"assets"),{recursive:true,force:true});
 await rm(out,{recursive:true,force:true});
-execFileSync("trunk",["build","--release","--dist",out],{cwd:web,stdio:"inherit"});
+execFileSync("trunk",["build","--release","--locked","--dist",out],{cwd:web,stdio:"inherit"});
 for(const name of ["favicon.svg","manifest.webmanifest","sw.js","_headers"]){
   await copyFile(path.join(root,"site",name),path.join(out,name));
 }

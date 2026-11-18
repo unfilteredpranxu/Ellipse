@@ -8,3 +8,6 @@ dist/
 .DS_Store
 *.log
 .native-cache/
+
+/tests/browser/test-results/
+/tests/browser/playwright-report/

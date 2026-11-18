@@ -1,63 +1,35 @@
+mod auth;
+mod clock;
+mod home;
+mod settings;
+
+use auth::Session;
 use leptos::prelude::*;
-use wasm_bindgen::{closure::Closure, prelude::*, JsCast};
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = window, js_name = ellipseLogin)]
-    fn ellipse_login();
-    #[wasm_bindgen(js_namespace = window, js_name = ellipseLogout)]
-    fn ellipse_logout();
-}
-
-fn field(event: &web_sys::Event, key: &str) -> String {
-    let Some(custom) = event.dyn_ref::<web_sys::CustomEvent>() else { return String::new(); };
-    js_sys::Reflect::get(&custom.detail(), &JsValue::from_str(key))
-        .ok().and_then(|v| v.as_string()).unwrap_or_default()
-}
 
 #[component]
 fn App() -> impl IntoView {
-    let (signed_in, set_signed_in) = signal(false);
-    let (name, set_name) = signal(String::new());
-    let (message, set_message) = signal(String::new());
+    let session = RwSignal::new(Session::Checking);
+    let message = RwSignal::new(String::new());
+    auth::observe(session, message);
 
-    // The presentation, session state, and layout are Rust/Leptos.
-    // Firebase's browser SDK is isolated behind this small JS auth bridge.
-    let listener = Closure::<dyn FnMut(web_sys::Event)>::new(move |event| {
-        match field(&event, "type").as_str() {
-            "signed_in" => {
-                set_signed_in.set(true);
-                let label = field(&event, "name");
-                let email = field(&event, "email");
-                set_name.set(if label.is_empty() { email } else { label });
-                set_message.set(String::new());
-            }
-            "signed_out" => {
-                set_signed_in.set(false);
-                set_message.set(String::new());
-            }
-            "error" => set_message.set(field(&event, "message")),
-            "busy" => set_message.set("Opening Google…".to_owned()),
-            _ => {}
+    move || match session.get() {
+        Session::Checking => view! {
+            <main class="session-loading" aria-label="Ellipse">
+                <span class="ellipse-mark" aria-hidden="true"></span>
+                <p role="status">"Checking your Google session…"</p>
+            </main>
         }
-    });
-    if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("ellipse:auth", listener.as_ref().unchecked_ref());
-        if let Ok(snapshot) = js_sys::Reflect::get(&window, &JsValue::from_str("ellipseAuthSnapshot")) {
-            if !snapshot.is_undefined() && !snapshot.is_null() {
-                let kind = js_sys::Reflect::get(&snapshot, &JsValue::from_str("type"))
-                    .ok().and_then(|v| v.as_string()).unwrap_or_default();
-                if kind == "signed_in" {
-                    set_signed_in.set(true);
-                    let label = js_sys::Reflect::get(&snapshot, &JsValue::from_str("name"))
-                        .ok().and_then(|v| v.as_string()).unwrap_or_default();
-                    set_name.set(label);
-                }
-            }
+        .into_any(),
+        Session::SignedOut => view! { <SignIn message/> }.into_any(),
+        Session::SignedIn(account) => view! {
+            <home::Home account=account message=message/>
         }
+        .into_any(),
     }
-    listener.forget();
+}
 
+#[component]
+fn SignIn(message: RwSignal<String>) -> impl IntoView {
     view! {
         <main class="screen" aria-label="Ellipse welcome">
             <div class="hero-wrap">
@@ -77,8 +49,7 @@ fn App() -> impl IntoView {
                     <p>"Sign in to pick up where you left off."</p>
                 </div>
                 <div class="bottom">
-                    <Show when=move || signed_in.get() fallback=move || view! {
-                        <button class="signin-button" type="button" on:click=move |_| ellipse_login()>
+                        <button class="signin-button" type="button" on:click=move |_| auth::ellipse_login()>
                             <svg class="google-mark" width="21" height="21" viewBox="0 0 48 48" aria-hidden="true">
                                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                                 <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.04 46.98 31.9 46.98 24.55z"/>
@@ -87,17 +58,6 @@ fn App() -> impl IntoView {
                             </svg>
                             <span>"Continue with Google"</span>
                         </button>
-                    }>
-                        <div class="signed-in">
-                            <div>
-                                <div class="account-name">{move || name.get()}</div>
-                                <div class="account-label">"Connected with Google"</div>
-                            </div>
-                            <button class="signout" type="button" on:click=move |_| ellipse_logout()>
-                                "Sign out"
-                            </button>
-                        </div>
-                    </Show>
                     <p class="notice" role="status" aria-live="polite">{move || message.get()}</p>
                 </div>
             </section>

@@ -113,6 +113,12 @@ jobs:
       - run: npm install
       - run: npm run icons
       - run: npm run tauri -- ios init --ci
+      - name: Check generated Xcode project
+        run: |
+          project=$(find src-tauri/gen/apple -name '*.xcodeproj' -type d -print -quit)
+          test -n "$project"
+          xcodebuild -list -project "$project"
+      - run: npm run build
       - run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
       - uses: actions/upload-artifact@v4
         with:

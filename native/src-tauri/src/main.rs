@@ -1,2 +1,4 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-fn main() { ellipse_native_lib::run(); }
+fn main() {
+    ellipse_native_lib::run();
+}

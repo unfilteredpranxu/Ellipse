@@ -9,6 +9,9 @@ rustup target add wasm32-unknown-unknown
 if ! command -v trunk >/dev/null; then cargo install trunk --locked; fi
 mkdir -p web/assets
 cp -R site/assets/. web/assets/
-(cd web && trunk build --release --dist ../dist)
+(cd web && trunk build --release --locked --dist ../dist)
 cp site/favicon.svg site/manifest.webmanifest site/sw.js site/_headers dist/
+if commit=$(git rev-parse --verify HEAD 2>/dev/null); then
+  printf '{"commit":"%s"}\n' "$commit" > dist/version.json
+fi
 echo "Ellipse Leptos/Rust WebAssembly output: dist/"
