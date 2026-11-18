@@ -412,7 +412,11 @@ pub fn Library(state: NotesState, settings: LibraryView, back: Callback<()>) -> 
         });
     };
     view! {
-        <main class="notes-library" aria-label="Notes library">
+        <Show when=move ||state.maintenance.get()>
+            <p class="notes-library-status" role="status">"Working with the Notes vault…"</p>
+        </Show>
+        <main class="notes-library" aria-label="Notes library"
+            inert=move ||state.maintenance.get()>
             <div class="notes-wallpaper" aria-hidden="true" style=move ||appearance.with(|look|format!(
                 "--wall-opacity:{}%;--wall-brightness:{}%;--wall-blur:{}px;--wall-frost:{}%;",
                 look.opacity,look.brightness,look.blur,look.frost
@@ -610,6 +614,63 @@ fn FolderPanel(state: NotesState, settings: LibraryView) -> impl IntoView {
             <button type="button" on:click=move |_|settings.filter.set(Filter::Archive)>"Archive"</button>
             <button type="button" on:click=move |_|settings.filter.set(Filter::Trash)>"Recently deleted"</button>
         </div>
+        <Show when=move ||state.local>
+            <VaultBackup state settings/>
+        </Show>
+    }
+}
+
+#[component]
+fn VaultBackup(state: NotesState, settings: LibraryView) -> impl IntoView {
+    let status = RwSignal::new(String::new());
+    view! {
+        <details>
+            <summary>"Vault backup"</summary>
+            <p>"Save your Notes library and its PDF originals, covers and wallpaper in one file."</p>
+            <button type="button" disabled=move ||!state.ready() || state.maintenance.get()
+                on:click=move |_|{
+                    if !state.ready() || state.maintenance.get_untracked(){return;}
+                    state.maintenance.set(true);
+                    let head=state.head.get_untracked();
+                    spawn_local(async move {
+                        let result=io::backup(head).await;
+                        let _=state.maintenance.try_set(false);
+                        let _=status.try_set(result.map(|path|format!("Vault backup saved to {path}")).unwrap_or_else(|error|error));
+                    });
+                }>"Save vault backup"</button>
+            <label class="notes-file">"Restore vault backup"
+                <input type="file" accept=".ellipsevault" disabled=move ||!state.ready() || state.maintenance.get()
+                    on:change=move |event|{
+                        let Some(file)=picked_file(&event) else{return};
+                        if !state.ready() || state.maintenance.get_untracked(){return;}
+                        if !window().confirm_with_message("Replace this device’s Notes vault with the selected backup? Save a backup of your current vault first if you want to keep it.").unwrap_or(false){return;}
+                        state.maintenance.set(true);
+                        let head=state.head.get_untracked();
+                        spawn_local(async move {
+                            let result=io::typed::<io::Snapshot>(io::restore_notes(head,&file)).await;
+                            if state.maintenance.try_set(false).is_some(){return;}
+                            match result {
+                                Ok(snapshot)=>batch(||{
+                                    state.head.set(snapshot.head);
+                                    state.selected.set(None);
+                                    state.history.update_value(|history|*history=Default::default());
+                                    state.pdfs.update_value(|cache|cache.clear());
+                                    state.vault.set(snapshot.vault);
+                                    settings.filter.set(Filter::All);
+                                    settings.folder.set(None);
+                                    settings.subject.set(String::new());
+                                    settings.collection.set(String::new());
+                                    settings.query.set(String::new());
+                                    settings.scroll.set(0.);
+                                    let _=status.try_set("Notes vault restored.".into());
+                                }),
+                                Err(error)=>{let _=status.try_set(error);}
+                            }
+                        });
+                    }/>
+            </label>
+            <p role="status">{move ||status.get()}</p>
+        </details>
     }
 }
 

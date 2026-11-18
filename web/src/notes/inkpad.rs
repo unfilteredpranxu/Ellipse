@@ -283,7 +283,7 @@ pub fn InkPad(
         }))
     };
     let finish = move |event: PointerEvent| {
-        let Some(current) = live
+        let Some(mut current) = live
             .try_update_value(|active| {
                 if active
                     .as_ref()
@@ -302,6 +302,17 @@ pub fn InkPad(
             let _ = canvas.release_pointer_capture(event.pointer_id());
         }
         paint();
+        if event.type_() != "pointerup" {
+            // Preserve sampled ink on interruption without applying a cancelled edit.
+            if current.tool != Tool::Ink || current.stroke.points.len() < 2 {
+                return;
+            }
+        } else if let Some(mut point) = position(&event) {
+            if event.pointer_type() == "pen" && point.pressure == 0. {
+                point.pressure = current.stroke.points.last().map_or(0.5, |p| p.pressure);
+            }
+            current.stroke.append(point);
+        }
         commit.run(Gesture {
             tool: current.tool,
             stroke: shape(&current.stroke, current.tool),
@@ -336,6 +347,6 @@ pub fn InkPad(
                 });
                 schedule();
             }
-            on:pointerup=finish on:pointercancel=finish/>
+            on:pointerup=finish on:pointercancel=finish on:lostpointercapture=finish/>
     }
 }

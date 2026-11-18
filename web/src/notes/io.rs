@@ -27,6 +27,8 @@ extern "C" {
     pub fn download_original(pdf: &JsValue, name: &str);
     #[wasm_bindgen(js_name = downloadNotebook)]
     pub fn download_notebook(json: &str, name: &str);
+    #[wasm_bindgen(js_name = restoreNotes)]
+    pub fn restore_notes(head: u32, file: &web_sys::File) -> Promise;
     #[wasm_bindgen(js_name = exportPdf)]
     fn export_pdf(pdf: &JsValue, spec: &JsValue, stationery: &Function, name: &str) -> Promise;
 }
@@ -104,6 +106,11 @@ pub async fn load() -> Result<Snapshot, String> {
 pub async fn save(head: u32, vault: &Vault) -> Result<u32, String> {
     let args = encode(&serde_json::json!({"head":head,"vault":vault}))?;
     typed(invoke_notes("notes_save", &args)).await
+}
+
+pub async fn backup(head: u32) -> Result<String, String> {
+    let args = encode(&serde_json::json!({"head":head}))?;
+    typed(invoke_notes("notes_backup", &args)).await
 }
 
 pub async fn export(book: &Book, pdf: Option<&PdfHandle>) -> Result<(), String> {

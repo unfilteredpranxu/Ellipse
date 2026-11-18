@@ -12,7 +12,9 @@ pub fn run() {
             notes::notes_load,
             notes::notes_save,
             notes::notes_store_pdf,
-            notes::notes_read_pdf
+            notes::notes_read_pdf,
+            notes::notes_backup,
+            notes::notes_restore
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Ellipse");

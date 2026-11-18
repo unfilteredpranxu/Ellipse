@@ -1,4 +1,6 @@
 //! Transactional local Notes storage. The caller supplies a private application directory.
+mod backup;
+pub use backup::MAX_BACKUP;
 use ellipse_core::{
     artwork::valid_asset_id,
     notes::{MAX_PDF, MAX_STATE, SCHEMA, Vault, valid_pdf},
@@ -53,9 +55,14 @@ impl Store {
             0 => sqlite(tx.execute_batch(
                 "CREATE TABLE snapshots (revision INTEGER PRIMARY KEY, payload BLOB NOT NULL, digest TEXT NOT NULL);
                  CREATE TABLE assets (id TEXT PRIMARY KEY, content BLOB NOT NULL);
-                 PRAGMA user_version = 1;",
+                 CREATE TABLE pending (base INTEGER PRIMARY KEY, payload BLOB NOT NULL, digest TEXT NOT NULL);
+                 PRAGMA user_version = 2;",
             ))?,
-            1 => {},
+            1 => sqlite(tx.execute_batch(
+                "CREATE TABLE pending (base INTEGER PRIMARY KEY, payload BLOB NOT NULL, digest TEXT NOT NULL);
+                 PRAGMA user_version = 2;",
+            ))?,
+            2 => {},
             _ => return Err("This Notes database requires a newer version of Ellipse.".into()),
         }
         sqlite(tx.commit())?;
@@ -63,7 +70,34 @@ impl Store {
     }
 
     pub fn load(&self) -> Result<Snapshot> {
-        let db = self.open()?;
+        let mut db = self.open()?;
+        let tx = sqlite(db.transaction())?;
+        let snapshot = Self::committed(&tx)?;
+        let pending = sqlite(
+            tx.query_row(
+                "SELECT payload, digest FROM pending WHERE base=?1
+             AND typeof(payload)='blob' AND length(payload)<=?2
+             AND typeof(digest)='text' AND length(CAST(digest AS BLOB))=64",
+                params![snapshot.head, MAX_STATE],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional(),
+        )?;
+        if let Some((payload, digest)) = pending
+            && hash(&payload) == digest
+            && let Ok(vault) = serde_json::from_slice::<Vault>(&payload)
+            && vault.validate().is_ok()
+        {
+            return Ok(Snapshot {
+                head: snapshot.head,
+                vault,
+                recovered: true,
+            });
+        }
+        Ok(snapshot)
+    }
+
+    fn committed(db: &Connection) -> Result<Snapshot> {
         let mut query = sqlite(db.prepare(
             "SELECT revision,
              CASE WHEN typeof(payload) = 'blob' AND length(payload) <= ?1 THEN payload END,
@@ -117,24 +151,89 @@ impl Store {
     }
 
     pub fn save(&self, head: u32, vault: &Vault) -> Result<u32> {
-        vault.validate()?;
-        let payload = serde_json::to_vec(vault).map_err(|_| "Could not encode Notes.")?;
-        if payload.len() > MAX_STATE {
-            return Err("The Notes library exceeds this version’s storage limit. Export or remove material before saving.".into());
-        }
+        let payload = Self::encode(vault)?;
         let digest = hash(&payload);
         let mut db = self.open()?;
         let tx = sqlite(db.transaction_with_behavior(TransactionBehavior::Immediate))?;
-        let current: u32 = sqlite(tx.query_row(
+        let current = Self::head(&tx)?;
+        if Some(current) == head.checked_add(1)
+            && sqlite(tx.query_row(
+                "SELECT payload=?2 AND digest=?3 FROM snapshots WHERE revision=?1",
+                params![current, payload, digest],
+                |r| r.get::<_, bool>(0),
+            ))?
+        {
+            return Ok(current);
+        }
+        Self::stage(&tx, head, vault, &payload, &digest)?;
+        sqlite(tx.commit())?;
+
+        let tx = sqlite(db.transaction_with_behavior(TransactionBehavior::Immediate))?;
+        Self::check_head(&tx, head)?;
+        let next = Self::write_checkpoint(&tx, head, &payload, &digest)?;
+        sqlite(tx.execute("DELETE FROM pending WHERE base=?1", [head]))?;
+        sqlite(tx.commit())?;
+        Ok(next)
+    }
+
+    fn encode(vault: &Vault) -> Result<Vec<u8>> {
+        vault.validate()?;
+        let mut payload = Vec::new();
+        serde_json::to_writer(&mut payload, vault).map_err(|_| "Could not encode Notes.")?;
+        if payload.len() > MAX_STATE {
+            return Err("The Notes library exceeds this version’s storage limit. Export or remove material before saving.".into());
+        }
+        Ok(payload)
+    }
+
+    fn head(db: &Connection) -> Result<u32> {
+        sqlite(db.query_row(
             "SELECT COALESCE(MAX(revision), 0) FROM snapshots",
             [],
             |r| r.get(0),
-        ))?;
-        if current != head {
-            return Err("Notes changed in another window. Close the other window and reopen the library before editing.".into());
+        ))
+    }
+
+    fn check_head(db: &Connection, head: u32) -> Result<()> {
+        if Self::head(db)? != head {
+            return Err(
+                "Notes changed in another window. Reopen the library before editing.".into(),
+            );
         }
+        Ok(())
+    }
+
+    fn stage(
+        db: &Connection,
+        head: u32,
+        vault: &Vault,
+        payload: &[u8],
+        digest: &str,
+    ) -> Result<()> {
+        Self::check_head(db, head)?;
+        Self::check_pdfs(db, vault)?;
+        let inserted = sqlite(db.execute(
+            "INSERT OR IGNORE INTO pending VALUES (?1, ?2, ?3)",
+            params![head, payload, digest],
+        ))?;
+        let matches = inserted == 1
+            || sqlite(db.query_row(
+                "SELECT payload = ?2 AND digest = ?3 FROM pending WHERE base=?1",
+                params![head, payload, digest],
+                |row| row.get(0),
+            ))?;
+        if !matches {
+            return Err(
+                "An earlier Notes write needs recovery. Reopen Notes before saving further edits."
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn check_pdfs(db: &Connection, vault: &Vault) -> Result<()> {
         for pdf in vault.books.iter().filter_map(|book| book.pdf.as_ref()) {
-            let exists: bool = sqlite(tx.query_row(
+            let exists: bool = sqlite(db.query_row(
                 "SELECT EXISTS (SELECT 1 FROM assets WHERE id = ?1)",
                 [&pdf.asset],
                 |row| row.get(0),
@@ -143,18 +242,19 @@ impl Store {
                 return Err("A PDF referenced by this save is missing.".into());
             }
         }
-        let next = current
-            .checked_add(1)
-            .ok_or("Notes revision limit reached.")?;
-        sqlite(tx.execute(
+        Ok(())
+    }
+
+    fn write_checkpoint(db: &Connection, head: u32, payload: &[u8], digest: &str) -> Result<u32> {
+        let next = head.checked_add(1).ok_or("Notes revision limit reached.")?;
+        sqlite(db.execute(
             "INSERT INTO snapshots VALUES (?1, ?2, ?3)",
             params![next, payload, digest],
         ))?;
-        sqlite(tx.execute(
+        sqlite(db.execute(
             "DELETE FROM snapshots WHERE revision <= ?1",
             [next.saturating_sub(4)],
         ))?;
-        sqlite(tx.commit())?;
         Ok(next)
     }
 
@@ -212,7 +312,10 @@ mod tests {
         assert_eq!(store.save(0, &vault).unwrap(), 1);
         vault.books[0].title = "Renamed".into();
         assert_eq!(store.save(1, &vault).unwrap(), 2);
-        assert!(store.save(1, &vault).is_err());
+        assert_eq!(store.save(1, &vault).unwrap(), 2);
+        let mut stale = vault.clone();
+        stale.books[0].title = "A stale edit".into();
+        assert!(store.save(1, &stale).is_err());
         {
             let mut connection = store.open().unwrap();
             let uncommitted = connection.transaction().unwrap();
@@ -241,6 +344,25 @@ mod tests {
         );
         assert_eq!(reopened.save(recovered.head, &recovered.vault).unwrap(), 3);
         assert!(!reopened.load().unwrap().recovered);
+    }
+
+    #[test]
+    fn upgrades_the_existing_schema_without_replacing_notes() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path()).unwrap();
+        let mut vault = Vault::default();
+        let book = vault.new_book("Pre-upgrade notebook", 1, Paper::default());
+        vault.books.push(book);
+        store.save(0, &vault).unwrap();
+        store
+            .open()
+            .unwrap()
+            .execute_batch("DROP TABLE pending; PRAGMA user_version=1;")
+            .unwrap();
+        let snapshot = store.load().unwrap();
+        assert_eq!(snapshot.head, 1);
+        assert_eq!(snapshot.vault, vault);
+        assert_eq!(store.save(1, &vault).unwrap(), 2);
     }
 
     #[test]
@@ -284,6 +406,73 @@ mod tests {
         let _ = process.wait();
         assert!(ready, "child should have entered an uncommitted write");
         assert_eq!(store.load().unwrap().vault, vault);
+    }
+
+    #[test]
+    fn killed_after_staging_recovers_completed_edit_and_rejects_stale_data() {
+        const CHILD_ROOT: &str = "ELLIPSE_NOTES_STAGE_TEST_DIR";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let path = PathBuf::from(root);
+            let store = Store::new(&path).unwrap();
+            let Snapshot {
+                head, mut vault, ..
+            } = store.load().unwrap();
+            vault.books[0].title = "Completed edit".into();
+            let payload = Store::encode(&vault).unwrap();
+            let mut db = store.open().unwrap();
+            let tx = db
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .unwrap();
+            Store::stage(&tx, head, &vault, &payload, &hash(&payload)).unwrap();
+            tx.commit().unwrap();
+            fs::write(path.join("staged"), b"ready").unwrap();
+            std::thread::park_timeout(Duration::from_secs(30));
+            return;
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path()).unwrap();
+        let mut vault = Vault::default();
+        let book = vault.new_book("Original", 1, Paper::default());
+        vault.books.push(book);
+        store.save(0, &vault).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::killed_after_staging_recovers_completed_edit_and_rejects_stale_data",
+            ])
+            .env(CHILD_ROOT, root.path())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        while !root.path().join("staged").exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let staged = root.path().join("staged").exists();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(staged);
+        let pending = store.load().unwrap();
+        assert_eq!(pending.head, 1);
+        assert!(pending.recovered);
+        assert_eq!(pending.vault.books[0].title, "Completed edit");
+        assert!(store.save(1, &vault).is_err());
+        assert_eq!(store.save(1, &pending.vault).unwrap(), 2);
+
+        vault.books[0].title = "Newer acknowledged edit".into();
+        assert_eq!(store.save(2, &vault).unwrap(), 3);
+        let stale = Store::encode(&pending.vault).unwrap();
+        store
+            .open()
+            .unwrap()
+            .execute(
+                "INSERT INTO pending VALUES (1, ?1, ?2)",
+                params![stale, hash(&stale)],
+            )
+            .unwrap();
+        assert_eq!(store.load().unwrap().vault, vault);
+        assert!(store.save(1, &pending.vault).is_err());
     }
 
     #[test]

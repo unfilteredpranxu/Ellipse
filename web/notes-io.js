@@ -166,6 +166,19 @@ export function downloadNotebook(json, name) {
   download(json, name, "application/json");
 }
 
+export async function restoreNotes(head, file) {
+  if (!file?.size || file.size > 96 * 1024 * 1024) {
+    throw new Error("Choose a Notes vault backup up to 96 MiB.");
+  }
+  const encoded = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("The Notes backup could not be read."));
+    reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(",") + 1));
+    reader.readAsDataURL(file);
+  });
+  return invokeNotes("notes_restore", {head, encoded});
+}
+
 export async function exportPdf(original, spec, stationery, name) {
   const {PDFDocument, StandardFonts, rgb, degrees, drawObject,
     setFillingColor, pushGraphicsState, popGraphicsState} = await import("/pdf-runtime/pdf-lib.mjs");

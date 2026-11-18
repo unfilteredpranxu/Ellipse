@@ -115,7 +115,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
       - uses: dtolnay/rust-toolchain@stable
-        with: {targets: "wasm32-unknown-unknown,aarch64-apple-ios"}
+        with: {targets: "wasm32-unknown-unknown,aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios"}
       - uses: taiki-e/install-action@v2
         with: {tool: trunk}
       - name: Check Xcode and the iPhoneOS SDK
@@ -133,6 +133,33 @@ jobs:
           xcodebuild -list -project "$project"
       - run: npm run build
       - run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
+      - name: Build an unsigned simulator app
+        run: |
+          target=x86_64
+          output=x86_64
+          if [ "$(uname -m)" = arm64 ]; then
+            target=aarch64-sim
+            output=arm64-sim
+          fi
+          npm run tauri -- ios build --ci --no-sign --target "$target"
+          app=$(find "src-tauri/gen/apple/build/$output" -name '*.app' -type d -print -quit)
+          test -n "$app"
+          /usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$app/Info.plist" | grep -qx true
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/ellipse-ios-simulator.zip"
+      - name: Build an unsigned iPhone and iPad IPA
+        run: |
+          npm run tauri -- ios build --ci --no-sign --target aarch64
+          ipa=$(find src-tauri/gen/apple/build/arm64 -name '*.ipa' -type f -print -quit)
+          test -n "$ipa"
+          cp "$ipa" "$RUNNER_TEMP/ellipse-ios-device-unsigned.ipa"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ellipse-ios-builds-unsigned
+          path: |
+            ${{ runner.temp }}/ellipse-ios-simulator.zip
+            ${{ runner.temp }}/ellipse-ios-device-unsigned.ipa
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: ellipse-ios-xcode-project

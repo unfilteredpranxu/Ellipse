@@ -547,6 +547,22 @@ async function stubNotesBridge(page, fixtures = false, recover = false) {
       const key="qa-notes";
       const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:recover?7:0,vault:initial(),recovered:recover};
       if (command==="notes_load") return previous;
+      if (command==="notes_backup") {
+        if (args.head!==previous.head) throw Error("Revision conflict.");
+        return "Documents/Ellipse Backups/Ellipse Notes 1.ellipsevault";
+      }
+      if (command==="notes_restore") {
+        if (args.head!==previous.head) throw Error("Revision conflict.");
+        let vault;
+        try {
+          vault=JSON.parse(atob(args.encoded));
+        } catch {
+          throw Error("Invalid fixture backup.");
+        }
+        const snapshot={head:previous.head+1,vault,recovered:false};
+        sessionStorage.setItem(key,JSON.stringify(snapshot));
+        return snapshot;
+      }
       if (command==="notes_save") {
         if (window.__failNotesSave) throw Error("Fixture storage unavailable.");
         if (args.head!==previous.head) throw Error("Revision conflict.");
@@ -625,6 +641,14 @@ test("Notes native bridge flow creates and saves vector pages, erases, recovers 
   await stroke(page,[[.15,.25],[.80,.25]]);
   await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(1);
   await page.getByLabel("Tool",{exact:true}).selectOption("Partial eraser");
+  const canvas=page.getByLabel("Writing surface");
+  const box=await canvas.boundingBox();
+  await page.mouse.move(box.x+box.width*.45,box.y+box.height*.21);
+  await page.mouse.down();
+  await page.mouse.move(box.x+box.width*.45,box.y+box.height*.31,{steps:6});
+  await canvas.dispatchEvent("pointercancel",{pointerId:1,pointerType:"mouse"});
+  await page.mouse.up();
+  expect((await notesSnapshot(page)).books[0].pages[0].ink).toHaveLength(1);
   await stroke(page,[[.45,.21],[.45,.31]]);
   await expect.poll(async()=> (await notesSnapshot(page)).books[0].pages[0].ink.length).toBe(2);
   await page.getByRole("button",{name:"Undo",exact:true}).click();
@@ -871,6 +895,35 @@ test("Notes exports editable annotation layers into a rotated PDF copy",async({p
   await download.saveAs(info.outputPath("annotated-rotated-fixture.pdf"));
   const original=await page.evaluate(()=>Uint8Array.from(atob(sessionStorage.getItem("qa-pdf")),b=>b.charCodeAt(0)));
   expect(Buffer.from(Object.values(original))).toEqual(bytes);
+});
+
+test("native Notes vault controls confirm restore and preserve the library on failure",async({page})=>{
+  await stubNotesBridge(page,true);
+  await page.goto("/");
+  await openLocalNotes(page);
+  await page.getByRole("button",{name:"Folders",exact:true}).click();
+  await page.getByText("Vault backup",{exact:true}).click();
+  await page.getByRole("button",{name:"Save vault backup",exact:true}).click();
+  await expect(page.getByText(/Vault backup saved to Documents/)).toBeVisible();
+
+  const chooser=page.getByLabel("Restore vault backup",{exact:true});
+  const file={name:"fixture.ellipsevault",mimeType:"application/octet-stream",buffer:Buffer.from("corrupt")};
+  page.once("dialog",dialog=>dialog.dismiss());
+  await chooser.setInputFiles(file);
+  await expect(page.getByRole("button",{name:"Archive journal",exact:true})).toBeVisible();
+  page.once("dialog",dialog=>dialog.accept());
+  await chooser.setInputFiles(file);
+  await expect(page.getByText("Invalid fixture backup.")).toBeVisible();
+  await expect(page.getByRole("button",{name:"Archive journal",exact:true})).toBeVisible();
+
+  const vault={schema:1,next:1,books:[],folders:[],study:{active:null,history:[]},dark:false};
+  page.once("dialog",dialog=>dialog.accept());
+  await chooser.setInputFiles({...file,buffer:Buffer.from(JSON.stringify(vault))});
+  await expect(page.getByText("Notes vault restored.",{exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Your shelf is empty",exact:true})).toBeVisible();
+  await page.reload();
+  await openLocalNotes(page);
+  await expect(page.getByRole("heading",{name:"Your shelf is empty",exact:true})).toBeVisible();
 });
 
 test("notebook PDF export preserves page stationery and individual pattern colors",async({page},info)=>{

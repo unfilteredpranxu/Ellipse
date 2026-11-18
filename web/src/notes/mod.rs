@@ -27,6 +27,7 @@ struct NotesState {
     head: RwSignal<u32>,
     epoch: RwSignal<u32>,
     saving: RwSignal<SaveState>,
+    maintenance: RwSignal<bool>,
     recovery_required: RwSignal<bool>,
     error: RwSignal<String>,
     current: RwSignal<Option<Id>>,
@@ -49,6 +50,7 @@ impl NotesState {
             head: RwSignal::new(0),
             epoch: RwSignal::new(0),
             saving: RwSignal::new(SaveState::Clean),
+            maintenance: RwSignal::new(false),
             recovery_required: RwSignal::new(false),
             error: RwSignal::new(String::new()),
             current: RwSignal::new(None),
@@ -131,7 +133,7 @@ impl NotesState {
     }
 
     fn ready(self) -> bool {
-        self.saving.get_untracked() == SaveState::Clean
+        self.saving.get() == SaveState::Clean
     }
 }
 
@@ -181,7 +183,7 @@ pub fn Notes(local: bool, back: Callback<()>) -> impl IntoView {
                 }>
                     <main class="notes-empty">
                         <h1>"Recover Notes"</h1>
-                        <p>"Notes found an earlier checkpoint. Save it before editing documents."</p>
+                        <p>"Notes found a recoverable checkpoint. Save it before editing documents."</p>
                         <Show when=move || state.saving.get()==SaveState::Error>
                             <p role="alert">{move || state.error.get()}</p>
                         </Show>
