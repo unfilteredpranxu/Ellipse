@@ -550,8 +550,9 @@ async function stubNotesBridge(page, fixtures = false, recover = false) {
       if (command==="notes_save") {
         if (window.__failNotesSave) throw Error("Fixture storage unavailable.");
         if (args.head!==previous.head) throw Error("Revision conflict.");
-        if (previous.recovered) {
-          await new Promise(resolve=>{window.__finishNotesRecovery=resolve;});
+        if (previous.recovered || window.__holdNextNotesSave) {
+          window.__holdNextNotesSave=false;
+          await new Promise(resolve=>{window.__finishNotesSave=resolve;});
         }
         await new Promise(resolve=>setTimeout(resolve,35));
         const head=args.head+1;
@@ -597,7 +598,15 @@ async function stroke(page, positions) {
   await page.mouse.up();
 }
 
-const notesSnapshot = page => page.evaluate(()=>JSON.parse(sessionStorage.getItem("qa-notes")).vault);
+async function notesSnapshot(page) {
+  // The empty vault returned by notes_load has no committed revision yet.
+  const snapshot=await page.waitForFunction(()=>sessionStorage.getItem("qa-notes"));
+  try {
+    return JSON.parse(await snapshot.jsonValue()).vault;
+  } finally {
+    await snapshot.dispose();
+  }
+}
 
 test("Notes native bridge flow creates and saves vector pages, erases, recovers a failed save and logs study", async ({page},info) => {
   test.setTimeout(90000);
@@ -746,10 +755,10 @@ test("recovered Notes remain locked until the checkpoint write is acknowledged",
 
   await page.evaluate(()=>{window.__failNotesSave=false;});
   await recover.click();
-  await page.waitForFunction(()=>typeof window.__finishNotesRecovery==="function");
+  await page.waitForFunction(()=>typeof window.__finishNotesSave==="function");
   await expect(page.getByRole("button",{name:"Saving recovered checkpoint…"})).toBeDisabled();
   await expect(notesLibrary(page)).toHaveCount(0);
-  await page.evaluate(()=>window.__finishNotesRecovery());
+  await page.evaluate(()=>window.__finishNotesSave());
   await expect(notesLibrary(page)).toBeVisible();
   await expect(page.getByText("Saved on this device")).toBeVisible();
   await page.reload();
@@ -761,14 +770,21 @@ test("Notes local folders, cover image, wallpaper, trash and restore survive rel
   await stubNotesBridge(page);
   await page.goto("/");
   await openLocalNotes(page);
+  const saved=page.getByText("Saved on this device",{exact:true});
+  await page.evaluate(()=>{window.__holdNextNotesSave=true;});
   await page.getByRole("button",{name:"Folders",exact:true}).click();
   await page.getByLabel("Folder name",{exact:true}).fill("Research");
   await page.getByRole("button",{name:"Add folder to selected shelf"}).click();
+  await page.waitForFunction(()=>typeof window.__finishNotesSave==="function");
   await page.getByLabel("Folder name",{exact:true}).fill("Field work");
   await page.getByRole("button",{name:"Add folder to selected shelf"}).click();
-  await expect.poll(async()=> (await notesSnapshot(page)).folders.length).toBe(2);
+  await expect(page.getByRole("option",{name:"Research / Field work",exact:true})).toBeAttached();
+  await expect(page.getByText("Saving…",{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem("qa-notes"))).toBeNull();
+  await page.evaluate(()=>window.__finishNotesSave());
+  await expect(saved).toBeVisible();
   const folders=(await notesSnapshot(page)).folders;
-  expect(folders[1].parent).toBe(folders[0].id);
+  expect(folders).toMatchObject([{title:"Research",parent:null},{title:"Field work",parent:folders[0].id}]);
   await page.getByRole("button",{name:"Close library panel"}).click();
   await page.getByRole("button",{name:"New notebook",exact:true}).click();
   await page.getByLabel("Name",{exact:true}).fill("Research diary");
@@ -778,18 +794,26 @@ test("Notes local folders, cover image, wallpaper, trash and restore survive rel
   await expect(page.locator(".notes-image-preview img")).toHaveAttribute("src",/^blob:/);
   await page.getByRole("button",{name:"Create notebook"}).click();
   await expect(page.locator(".notes-cover-photo")).toHaveAttribute("src",/^blob:/);
-  await expect.poll(async()=> (await notesSnapshot(page)).books[0]?.folder).toBe(folders[1].id);
+  await expect(saved).toBeVisible();
+  const [notebook]=(await notesSnapshot(page)).books;
+  expect(notebook).toMatchObject({title:"Research diary",folder:folders[1].id,cover_art:expect.any(Object)});
 
   await page.getByRole("button",{name:"Appearance",exact:true}).click();
   await page.getByLabel("Choose wallpaper").setInputFiles(photo);
   await expect(page.locator(".notes-image-preview img")).toHaveAttribute("src",/^blob:/);
   await page.getByRole("button",{name:"Apply appearance"}).click();
   await expect(page.locator(".notes-wallpaper img")).toHaveAttribute("src",/^blob:/);
-  await expect(page.getByText("Saved on this device")).toBeVisible();
+  await expect(saved).toBeVisible();
+  const appearance=(await notesSnapshot(page)).appearance;
+  expect(appearance.wallpaper).toEqual(expect.any(Object));
   await page.reload();
   await openLocalNotes(page);
   await expect(page.locator(".notes-cover-photo")).toHaveAttribute("src",/^blob:/);
   await expect(page.locator(".notes-wallpaper img")).toHaveAttribute("src",/^blob:/);
+  await page.getByRole("button",{name:"Folders",exact:true}).click();
+  await page.getByRole("combobox",{name:"Shelf",exact:true}).selectOption({label:"Research / Field work"});
+  await expect(page.getByRole("button",{name:"Research diary",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Close library panel"}).click();
 
   await page.getByRole("button",{name:"Details",exact:true}).click();
   await page.getByLabel("Name",{exact:true}).fill("Research record");
@@ -797,12 +821,26 @@ test("Notes local folders, cover image, wallpaper, trash and restore survive rel
   await page.getByRole("button",{name:"Details",exact:true}).click();
   await page.getByRole("button",{name:"Move to Recently deleted"}).click();
   await expect(page.getByRole("button",{name:"Research record",exact:true})).toHaveCount(0);
+  await expect(saved).toBeVisible();
+  expect((await notesSnapshot(page)).books[0]).toMatchObject({id:notebook.id,title:"Research record",disposition:"Trash"});
+  await page.reload();
+  await openLocalNotes(page);
+  await expect(page.getByRole("button",{name:"Research record",exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Folders",exact:true}).click();
   await page.getByRole("button",{name:"Recently deleted",exact:true}).click();
   await page.getByRole("button",{name:"Details",exact:true}).click();
   await page.getByRole("button",{name:"Restore to library",exact:true}).click();
   await page.getByRole("button",{name:"Library",exact:true}).click();
   await expect(page.getByRole("button",{name:"Research record",exact:true})).toBeVisible();
+  await expect(saved).toBeVisible();
+  expect(await notesSnapshot(page)).toMatchObject({
+    folders,appearance,books:[{...notebook,title:"Research record",disposition:"Active",modified:expect.any(Number)}],
+  });
+  await page.reload();
+  await openLocalNotes(page);
+  await expect(page.getByRole("button",{name:"Research record",exact:true})).toBeVisible();
+  await expect(page.locator(".notes-cover-photo")).toHaveAttribute("src",/^blob:/);
+  await expect(page.locator(".notes-wallpaper img")).toHaveAttribute("src",/^blob:/);
 });
 
 test("Notes exports editable annotation layers into a rotated PDF copy",async({page},info)=>{
