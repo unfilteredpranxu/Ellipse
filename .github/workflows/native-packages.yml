@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/native-packages.yml'
+      - 'native/package.json'
       - 'native/src-tauri/**'
       - 'crates/ellipse-notes-store/**'
       - 'crates/ellipse-core/src/notes/**'
@@ -87,7 +88,7 @@ jobs:
           packages: "platform-tools"
       - name: Install Android SDK and NDK
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.2.12479018"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
