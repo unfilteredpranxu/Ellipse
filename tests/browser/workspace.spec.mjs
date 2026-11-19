@@ -547,6 +547,7 @@ async function stubNotesBridge(page, fixtures = false, recover = false, restoreR
       const key="qa-notes";
       const previous=JSON.parse(sessionStorage.getItem(key)||"null") || {head:recover||restoreRequired?7:0,vault:initial(),recovered:recover,restore_required:restoreRequired};
       if (command==="notes_load") return previous;
+      if (command==="notes_diagnostics") return "Documents/Ellipse Backups/Ellipse diagnostics fixture.txt";
       if (command==="notes_backup") {
         if (args.head!==previous.head) throw Error("Revision conflict.");
         return "Documents/Ellipse Backups/Ellipse Notes 1.ellipsevault";
@@ -994,8 +995,11 @@ test("300-page image-only PDF stays readable and reports the absence of text",as
   await page.getByRole("searchbox",{name:"Find in document"}).fill("missing text");
   await page.getByRole("button",{name:"Find",exact:true}).click();
   await expect(page.getByText("This PDF has no searchable text layer.")).toBeVisible({timeout:15000});
-  await page.getByRole("button",{name:"300",exact:true}).click();
+  const pageNumber=page.getByRole("spinbutton",{name:"Jump to PDF page"});
+  await pageNumber.fill("300");
+  await pageNumber.press("Enter");
   await expect(page.getByLabel("Current page")).toHaveText("300 / 300");
+  await expect(page.getByRole("button",{name:"Preview page 300",exact:true})).toHaveAttribute("aria-current","page");
 });
 
 test("web Calendar, Study and Focus work offline per account and preserve recurring occurrence state", async ({page},info)=>{
@@ -1090,4 +1094,125 @@ test("installed Focus and the Notes mini timer share the durable vault session",
   await page.getByRole("button",{name:"Focus",exact:true}).click();
   await expect(page.getByRole("button",{name:"Start timer",exact:true})).toBeVisible();
   expect((await notesSnapshot(page)).study.history).toHaveLength(1);
+});
+
+test("PDF navigator resolves checked outline destinations and renders bounded thumbnails for cropped pages",async({page},info)=>{
+  await stubFirebase(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button",{name:"Notes",exact:true}).click();
+
+  const {PDFDocument,PDFName,PDFString,degrees}=await import("../../web/pdf-runtime/pdf-lib.mjs");
+  const doc=await PDFDocument.create();
+  const first=doc.addPage([420,530]);
+  const second=doc.addPage([420,530]);
+  second.setCropBox(16,20,395,500);
+  second.setRotation(degrees(90));
+  first.drawText("Start",{x:40,y:450});
+  second.drawText("Cropped example",{x:50,y:450});
+  const ctx=doc.context;
+  const root=ctx.nextRef(), internal=ctx.nextRef(), external=ctx.nextRef();
+  ctx.assign(root,ctx.obj({Type:"Outlines",First:internal,Last:external,Count:2}));
+  ctx.assign(internal,ctx.obj({Title:PDFString.of("Cropped example"),Parent:root,Dest:[second.ref,PDFName.of("Fit")],Next:external}));
+  ctx.assign(external,ctx.obj({Title:PDFString.of("External destination"),Parent:root,Prev:internal,
+    A:{S:PDFName.of("URI"),URI:PDFString.of("https://example.invalid/")}}));
+  doc.catalog.set(PDFName.of("Outlines"),root);
+  await page.getByLabel("Choose PDF",{exact:true}).setInputFiles({name:"Cropped example.pdf",mimeType:"application/pdf",buffer:Buffer.from(await doc.save())});
+  await expect(notesEditor(page)).toBeVisible();
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  const thumbnails=page.locator(".notes-pdf-previews canvas[data-rendered=true]");
+  await expect(thumbnails).toHaveCount(2);
+  const dimensions=await thumbnails.evaluateAll(nodes=>nodes.map(node=>[node.width,node.height]));
+  expect(dimensions.every(([w,h])=>w>0&&w<=128&&h>0&&h<=112)).toBe(true);
+  expect(dimensions[1][0]).toBeGreaterThan(dimensions[1][1]);
+  await page.getByText("PDF outline",{exact:true}).click();
+  await page.getByRole("button",{name:"Cropped example",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await expect(page.getByText("External destination",{exact:true})).toHaveCount(0);
+  await page.screenshot({path:info.outputPath("pdf-outline-and-thumbnails.png"),fullPage:true});
+  await page.getByLabel("Jump to PDF page",{exact:true}).fill("1");
+  await page.getByRole("button",{name:"Go",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("1 / 2");
+  await page.getByRole("button",{name:"Preview page 2",exact:true}).click();
+  await expect(page.getByLabel("Current page")).toHaveText("2 / 2");
+  await page.getByRole("button",{name:"Pages",exact:true}).click();
+  await expect(thumbnails).toHaveCount(0);
+});
+
+test("Calendar checklists preserve occurrence identity and custom dates remain explicitly personal",async({page},info)=>{
+  await stubFirebase(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button",{name:"Study",exact:true}).click();
+  await page.getByRole("radio",{name:"JEE Main only",exact:true}).check();
+  await page.getByLabel("Target year",{exact:true}).fill("2027");
+  await page.getByRole("button",{name:"Save track",exact:true}).click();
+  await page.getByLabel("Custom date for JEE Main",{exact:true}).fill("2027-04-07");
+  await page.getByRole("button",{name:"Save custom date",exact:true}).click();
+  await expect(page.getByText(/Custom date · 2027-04-07/)).toBeVisible();
+  await expect(page.getByText("Official date unavailable",{exact:true})).toBeVisible();
+
+  await page.getByRole("button",{name:"Calendar",exact:true}).click();
+  const date=page.getByLabel("Calendar date",{exact:true});
+  await date.fill("2027-04-07");
+  await expect(page.getByText("JEE Main · Custom date",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Add task",exact:true}).click();
+  await page.getByLabel("Task title",{exact:true}).fill("Daily review");
+  await page.getByRole("combobox",{name:"Repeat",exact:true}).selectOption("Daily");
+  await page.getByLabel("New checklist item",{exact:true}).fill("Read notes");
+  await page.getByRole("button",{name:"Add checklist item",exact:true}).click();
+  await page.getByRole("button",{name:"Save task",exact:true}).click();
+  const item=page.getByRole("checkbox",{name:"Checklist item Read notes",exact:true});
+  await item.check();
+  await expect(item).toBeChecked();
+  await expect(page.getByRole("checkbox",{name:"Complete Daily review",exact:true})).not.toBeChecked();
+  await date.fill("2027-04-08");
+  await expect(item).not.toBeChecked();
+  await date.fill("2027-04-07");
+  await expect(item).toBeChecked();
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:info.outputPath("checklist-and-exam-marker.png"),fullPage:true});
+  await page.reload();
+  await page.getByRole("button",{name:"Calendar",exact:true}).click();
+  await date.fill("2027-04-07");
+  await expect(item).toBeChecked();
+  await expect(page.getByText("JEE Main · Custom date",{exact:true})).toBeVisible();
+});
+
+test("Focus advances configured rounds and breaks once and publishes them to Calendar",async({page})=>{
+  const errors=[];
+  page.on("pageerror",error=>errors.push(error.message));
+  await page.clock.install({time:new Date("2026-11-19T09:10:00Z")});
+  await stubFirebase(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button",{name:"Focus",exact:true}).click();
+  await page.getByText("Pomodoro cycle",{exact:true}).click();
+  await page.getByRole("checkbox",{name:"Advance focus and breaks automatically",exact:true}).check();
+  await page.getByLabel("Minutes (0 for stopwatch)",{exact:true}).fill("1");
+  await page.getByLabel("Focus rounds",{exact:true}).fill("2");
+  await page.getByLabel("Break minutes",{exact:true}).fill("1");
+  await page.getByRole("button",{name:"Start timer",exact:true}).click();
+  await expect(page.getByText("2 focus rounds remaining",{exact:true})).toBeVisible();
+  const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem("ellipse:planner:v1:uia")).study);
+  await page.clock.runFor(61_000);
+  await expect.poll(async()=>(await read()).active?.kind).toBe("Break");
+  await expect(page.getByText("1 focus rounds remaining",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Calendar",exact:true}).click();
+  await expect(page.getByText("1 min 0 s focused",{exact:true})).toBeVisible();
+  await page.clock.runFor(121_000);
+  await expect.poll(async()=>(await read()).history.length).toBe(3);
+  const {history,active}=await read();
+  expect(active).toBeNull();
+  expect(history.map(record=>record.kind??"Focus")).toEqual(["Focus","Break","Focus"]);
+  expect(history.map(record=>record.intervals[0].end-record.intervals[0].start)).toEqual([60000,60000,60000]);
+  expect(errors).toEqual([]);
+});
+
+test("installed startup can export a local diagnostic file without opening Notes",async({page})=>{
+  await stubNotesBridge(page);
+  await page.goto("/");
+  await page.getByRole("button",{name:"Save local diagnostics",exact:true}).click();
+  await expect(page.getByText(/Diagnostics saved to Documents/)).toBeVisible();
+  await expect(notesLibrary(page)).toHaveCount(0);
 });

@@ -101,6 +101,76 @@ export async function renderPdf(pdf, number, canvas) {
   }
 }
 
+export function pdfOutline(pdf) {
+  // Cache only sanitized destinations within this document.
+  return pdf.outline ??= readOutline(pdf.doc).catch(error => {
+    pdf.outline = undefined;
+    throw error;
+  });
+}
+
+async function readOutline(doc) {
+  const items = await doc.getOutline();
+  const result = [];
+  let remaining = 500;
+  async function visit(entries, depth) {
+    if (depth >= 16 || !entries) return;
+    for (const entry of entries) {
+      if (--remaining < 0) return;
+      let page = null;
+      if (!entry.url && entry.dest) {
+        try {
+          const dest = typeof entry.dest === "string" ? await doc.getDestination(entry.dest) : entry.dest;
+          if (Array.isArray(dest)) {
+            const ref = dest[0];
+            const index = Number.isInteger(ref) ? ref : ref && await doc.getPageIndex(ref);
+            if (Number.isInteger(index) && index >= 0 && index < doc.numPages) page = index + 1;
+          }
+        } catch {
+          // A broken outline entry must not block the rest of the document.
+        }
+      }
+      const title = String(entry.title ?? "").replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, 240);
+      if (title && (page !== null || entry.items?.length)) result.push({title, page, depth});
+      await visit(entry.items, depth + 1);
+    }
+  }
+  await visit(items, 0);
+  return result;
+}
+
+const thumbnailJobs = new WeakMap();
+
+export function cancelPdfThumbnail(canvas) {
+  const job = thumbnailJobs.get(canvas);
+  thumbnailJobs.delete(canvas);
+  job?.task?.cancel();
+}
+
+export async function renderPdfThumbnail(pdf, number, canvas) {
+  cancelPdfThumbnail(canvas);
+  const job = {};
+  thumbnailJobs.set(canvas, job);
+  try {
+    const page = await pdf.doc.getPage(number);
+    if (thumbnailJobs.get(canvas) !== job || !canvas.isConnected) return;
+    const size = page.getViewport({scale:1});
+    if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+      throw new Error("The PDF page dimensions could not be read.");
+    }
+    const viewport = page.getViewport({scale:Math.min(128 / size.width, 112 / size.height)});
+    canvas.width = Math.max(1, Math.min(128, Math.ceil(viewport.width)));
+    canvas.height = Math.max(1, Math.min(112, Math.ceil(viewport.height)));
+    job.task = page.render({canvas, viewport, annotationMode: 0});
+    await job.task.promise;
+    if (thumbnailJobs.get(canvas) === job) canvas.dataset.rendered = "true";
+  } catch (error) {
+    if (thumbnailJobs.get(canvas) === job && error?.name !== "RenderingCancelledException") throw error;
+  } finally {
+    if (thumbnailJobs.get(canvas) === job) thumbnailJobs.delete(canvas);
+  }
+}
+
 export async function findPdf(pdf, query) {
   const needle = query.trim().toLocaleLowerCase();
   const hits = [];

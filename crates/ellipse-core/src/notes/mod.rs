@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub use study::*;
 
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 pub const NOTEBOOK_SCHEMA: u32 = 1;
 pub const MAX_PDF: usize = 24 * 1024 * 1024;
 pub const MAX_STATE: usize = 32 * 1024 * 1024;
@@ -332,6 +332,7 @@ impl Vault {
 
     pub fn validate(&self) -> Result<(), &'static str> {
         if !(1..=SCHEMA).contains(&self.schema)
+            || (self.schema < 3 && (self.planner.has_new_fields() || self.study.cycle.is_some()))
             || (self.schema == 1
                 && (!self.planner.is_default() || self.study.has_extended_fields()))
             || self.next == u32::MAX

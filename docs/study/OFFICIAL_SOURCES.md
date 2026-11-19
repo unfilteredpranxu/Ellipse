@@ -1,6 +1,6 @@
 # Official exam sources
 
-Access attempted on 2026-11-18 UTC. Each host returned HTTP 403 at the environment proxy. No syllabus PDF bytes, document year, source hash, or 2027 examination date could be verified. There are no seeded official chapters or countdown dates. Personal topics entered in Study are user data.
+Primary sources and the government document CDN at `cdnbbsr.s3waas.gov.in` were retried on 2026-11-19 UTC. Each host returned HTTP 403 at the environment proxy. No syllabus PDF bytes, document year, source hash, or 2027 examination date could be verified. There are no seeded official chapters or countdown dates. Personal topics and exam dates entered in Study are user data. The app labels personal dates **Custom date** and continues to show the official date as unavailable.
 
 | Track | Intended primary authority |
 | --- | --- |

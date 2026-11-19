@@ -274,3 +274,19 @@
   .planner-form-grid {grid-template-columns:minmax(0,1fr);}
   .planner-grid button {padding:3px;}
 }
+.pdf-jump,.pdf-jump label {display:flex;align-items:center;gap:8px;}
+.pdf-jump input {max-width:6rem;}
+.notes-pdf-previews {display:grid;grid-template-columns:repeat(auto-fit,minmax(55px,1fr));gap:6px;margin-block:10px;}
+.notes-pdf-thumbnail {min-width:0;display:grid;justify-items:center;gap:5px;border:1px solid var(--line)!important;}
+.notes-pdf-thumbnail canvas {width:auto;height:auto;max-width:100%;max-height:72px;object-fit:contain;}
+.notes-pdf-thumbnail-error {font-size:.7rem;}
+.notes-pdf-outline {margin-block:8px;}
+.notes-pdf-outline ul {list-style:none;padding:0;margin:0;overflow-wrap:anywhere;}
+.notes-pdf-outline li {padding-inline-start:calc(var(--outline-depth) * 9px);}
+.notes-pdf-outline button {text-align:left;}
+.planner-checklist,.planner-exam-list {margin:0;padding:0;list-style:none;}
+.planner-checklist-editor {min-width:0;}
+.planner-checklist:empty,.planner-exam-list:empty {display:none;}
+.planner-overdue li button {text-align:left;}
+.planner-exam-dot {width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
+.local-diagnostics {background:transparent;color:inherit;border:0;text-decoration:underline;min-height:44px;justify-self:center;max-width:100%;}

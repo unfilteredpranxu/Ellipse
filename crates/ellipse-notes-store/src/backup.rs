@@ -247,7 +247,7 @@ fn write_archive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ellipse_core::notes::{Folder, LocalImage, Paper, Pdf, Pen, Point, Stroke};
+    use ellipse_core::notes::{Cycle, Folder, LocalImage, Paper, Pdf, Pen, Point, Stroke};
 
     fn fixture(store: &Store, artwork: &Path) -> (Vault, Vec<u8>, Vec<u8>) {
         let mut pdf = b"%PDF-1.7\n".to_vec();
@@ -287,16 +287,21 @@ mod tests {
         });
         vault.books.push(book);
         vault.appearance.wallpaper = Some(picture);
-        use ellipse_core::notes::planner::{Day, Profile, Task, Track};
+        use ellipse_core::notes::planner::{Day, Exam, Profile, Task, Track};
         vault.planner.profile = Some(Profile {
             track: Track::Both,
             year: 2027,
         });
         let day = Day::new(2027, 1, 17).unwrap();
-        let id = vault
+        vault
             .planner
-            .save_task(Task::new(day, "Read the annotated PDF", 20))
+            .set_custom_exam_date(Exam::Main, 2027, Some(day))
             .unwrap();
+        let mut task = Task::new(day, "Read the annotated PDF", 20);
+        task.checklist.add("Read the crop").unwrap();
+        let item = task.checklist.items[0].id;
+        task.set_checklist_item(day, item, true).unwrap();
+        let id = vault.planner.save_task(task).unwrap();
         vault.planner.tasks[0].set_done(day, true, 25);
         assert!(
             vault
@@ -305,6 +310,19 @@ mod tests {
         );
         vault.study.active.as_mut().unwrap().task = Some(id);
         assert!(vault.study.finish(90));
+        assert!(
+            vault
+                .study
+                .start("Physics", Some(vault.books[0].id), Some(25), 100)
+        );
+        vault
+            .study
+            .enable_cycle(Cycle {
+                focus_minutes: 25,
+                break_minutes: 5,
+                remaining: 2,
+            })
+            .unwrap();
         let head = store.save(0, &vault).unwrap();
         let archive = store.backup(head, artwork).unwrap();
         (vault, pdf, archive)

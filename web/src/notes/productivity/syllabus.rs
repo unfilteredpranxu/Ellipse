@@ -2,7 +2,7 @@ use super::{date_at, readable_duration, shift, today};
 use crate::notes::{NotesState, Section, now};
 use ellipse_core::notes::{
     SessionKind, label,
-    planner::{Exam, Profile, Progress, Task, Topic, Track},
+    planner::{Day, Exam, Profile, Progress, Task, Topic, Track},
 };
 use leptos::prelude::*;
 use std::collections::BTreeMap;
@@ -86,6 +86,72 @@ fn source(exam: Exam) -> &'static str {
     }
 }
 
+fn kolkata_today() -> Day {
+    // Asia/Kolkata does not observe daylight saving in the supported exam years.
+    let date = js_sys::Date::new(&(js_sys::Date::now() + 19_800_000.).into());
+    Day {
+        year: date.get_utc_full_year() as u16,
+        month: (date.get_utc_month() + 1) as u8,
+        day: date.get_utc_date() as u8,
+    }
+}
+
+#[component]
+fn ExamDateCard(
+    state: NotesState,
+    exam: Exam,
+    year: u16,
+    notice: RwSignal<String>,
+    india_day: RwSignal<Day>,
+) -> impl IntoView {
+    let current = Memo::new(move |_| {
+        state.vault.with(|v| {
+            v.planner
+                .custom_exam_dates
+                .iter()
+                .find(|entry| entry.exam == exam && entry.day.year == year)
+                .map(|entry| entry.day)
+        })
+    });
+    let draft = RwSignal::new(
+        current
+            .get_untracked()
+            .map(|day| day.to_string())
+            .unwrap_or_default(),
+    );
+    let date_name = format!("Custom date for {}", exam.label());
+    let min = format!("{year}-01-01");
+    let max = format!("{year}-12-31");
+    view! {
+        <article>
+            <strong>{format!("{} {}",exam.label(),year)}</strong>
+            <p>"Official date unavailable"</p>
+            {move ||current.get().map(|day|{
+                let gap=day.ordinal()-india_day.get().ordinal();
+                let when=if gap==0{"Today".into()}else if gap<0{"Date passed".into()}else{format!("{gap} days remaining")};
+                view!{<p>{format!("Custom date · {day} · {when} (India time)")}</p>}
+            })}
+            <a href=source(exam) target="_blank" rel="noopener noreferrer">"Official exam site"</a>
+            <form class="planner-controls" on:submit=move |e|{
+                e.prevent_default();
+                let raw=draft.get_untracked();
+                let date=if raw.is_empty(){Ok(None)}else{raw.parse::<Day>().map(Some).map_err(|_|"Choose a valid date.")};
+                let result=state.edit_productivity(|vault|vault.planner.set_custom_exam_date(exam,year,date?));
+                notice.set(result.err().unwrap_or_default());
+            }>
+                <label>"Custom date"<input type="date" aria-label=date_name min=min max=max
+                    prop:value=move ||draft.get() on:change=move |e|draft.set(event_target_value(&e))/></label>
+                <button type="submit">"Save custom date"</button>
+                <button type="button" disabled=move ||current.with(Option::is_none) on:click=move |_|{
+                    let result=state.edit_productivity(|vault|vault.planner.set_custom_exam_date(exam,year,None));
+                    if result.is_ok(){draft.set(String::new());}
+                    notice.set(result.err().unwrap_or_default());
+                }>"Clear"</button>
+            </form>
+        </article>
+    }
+}
+
 #[component]
 fn ExamTopics(
     state: NotesState,
@@ -97,6 +163,18 @@ fn ExamTopics(
     let subject = RwSignal::new(exam.get_untracked().subjects()[0]);
     let unit = RwSignal::new(String::new());
     let title = RwSignal::new(String::new());
+    let india_day = RwSignal::new(kolkata_today());
+    if let Ok(clock) = leptos::leptos_dom::helpers::set_interval_with_handle(
+        move || {
+            let day = kolkata_today();
+            if india_day.try_get_untracked().is_some_and(|old| old != day) {
+                india_day.set(day);
+            }
+        },
+        std::time::Duration::from_secs(30),
+    ) {
+        on_cleanup(move || clock.clear());
+    }
     let active_topics = Memo::new(move |_| {
         let exam = exam.get();
         let subject = subject.get();
@@ -115,11 +193,7 @@ fn ExamTopics(
             <h2>"Syllabus"</h2>
             <div class="exam-source-list">
                 {profile.track.exams().iter().copied().map(|exam|view!{
-                    <article>
-                        <strong>{format!("{} {}",exam.label(),profile.year)}</strong>
-                        <p>"Official date unavailable"</p>
-                        <a href=source(exam) target="_blank" rel="noopener noreferrer">"Official exam site"</a>
-                    </article>
+                    <ExamDateCard state exam year=profile.year notice india_day/>
                 }).collect::<Vec<_>>()}
             </div>
             <p>"Official syllabus documents could not be verified. Topics added here are personal."</p>

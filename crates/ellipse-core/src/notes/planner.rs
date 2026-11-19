@@ -95,6 +95,106 @@ pub enum Priority {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChecklistItem {
+    pub id: u16,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checklist {
+    next: u16,
+    pub items: Vec<ChecklistItem>,
+    done: BTreeMap<String, BTreeSet<u16>>,
+}
+
+impl Default for Checklist {
+    fn default() -> Self {
+        Self {
+            next: 1,
+            items: Vec::new(),
+            done: BTreeMap::new(),
+        }
+    }
+}
+
+impl Checklist {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn add(&mut self, title: &str) -> Result<(), &'static str> {
+        let title = label(title);
+        if title.is_empty() {
+            return Err("Enter a checklist item.");
+        }
+        if self.items.len() >= 24 || self.next == u16::MAX {
+            return Err("Checklist item limit reached.");
+        }
+        self.items.push(ChecklistItem {
+            id: self.next,
+            title,
+        });
+        self.next += 1;
+        Ok(())
+    }
+
+    pub fn remove(&mut self, id: u16) {
+        self.items.retain(|item| item.id != id);
+        self.prune();
+    }
+
+    pub fn checked(&self, day: Day, id: u16) -> bool {
+        self.done
+            .get(&day.to_string())
+            .is_some_and(|items| items.contains(&id))
+    }
+
+    fn set_checked(&mut self, day: Day, id: u16, done: bool) -> Result<(), &'static str> {
+        if !self.items.iter().any(|item| item.id == id) {
+            return Err("Checklist item no longer exists.");
+        }
+        let key = day.to_string();
+        if done {
+            if self.done.len() >= 4096 && !self.done.contains_key(&key) {
+                return Err("Checklist history limit reached.");
+            }
+            self.done.entry(key).or_default().insert(id);
+        } else if let Some(items) = self.done.get_mut(&key) {
+            items.remove(&id);
+            if items.is_empty() {
+                self.done.remove(&key);
+            }
+        }
+        Ok(())
+    }
+
+    fn prune(&mut self) {
+        let ids: BTreeSet<_> = self.items.iter().map(|item| item.id).collect();
+        self.done.retain(|_, items| {
+            items.retain(|id| ids.contains(id));
+            !items.is_empty()
+        });
+    }
+
+    fn valid(&self) -> bool {
+        let mut ids = BTreeSet::new();
+        self.next > 0
+            && self.items.len() <= 24
+            && self.done.len() <= 4096
+            && self.items.iter().all(|item| {
+                item.id > 0
+                    && item.id < self.next
+                    && ids.insert(item.id)
+                    && !label(&item.title).is_empty()
+                    && item.title.len() <= 480
+            })
+            && self.done.iter().all(|(day, items)| {
+                day.parse::<Day>().is_ok() && !items.is_empty() && items.is_subset(&ids)
+            })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
     pub id: Id,
     pub title: String,
@@ -111,6 +211,8 @@ pub struct Task {
     pub created: i64,
     pub completions: BTreeMap<String, i64>,
     pub skipped: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Checklist::is_default")]
+    pub checklist: Checklist,
 }
 
 impl Task {
@@ -130,6 +232,7 @@ impl Task {
             created: now,
             completions: BTreeMap::new(),
             skipped: BTreeSet::new(),
+            checklist: Checklist::default(),
         }
     }
 
@@ -165,8 +268,38 @@ impl Task {
         }
     }
 
+    pub fn set_checklist_item(
+        &mut self,
+        day: Day,
+        id: u16,
+        checked: bool,
+    ) -> Result<(), &'static str> {
+        if !self.occurs(day) {
+            return Err("The task is not scheduled on this date.");
+        }
+        self.checklist.set_checked(day, id, checked)
+    }
+
+    pub fn duplicate_for(&self, day: Day, now: i64) -> Self {
+        let mut copy = self.clone();
+        copy.id = 0;
+        copy.day = day;
+        copy.created = now;
+        copy.completions.clear();
+        copy.skipped.clear();
+        copy.checklist.done.clear();
+        copy
+    }
+
+    pub fn overdue(&self, today: Day) -> bool {
+        self.repeat == Repeat::Once
+            && self.day < today
+            && !self.completions.contains_key(&self.day.to_string())
+    }
+
     fn valid(&self) -> bool {
         self.day.valid()
+            && self.checklist.valid()
             && !label(&self.title).is_empty()
             && self.title.len() <= 480
             && self.details.len() <= 4000
@@ -297,6 +430,12 @@ pub struct Topic {
     pub changed: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomExamDate {
+    pub exam: Exam,
+    pub day: Day,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Planner {
@@ -305,6 +444,8 @@ pub struct Planner {
     pub topics: Vec<Topic>,
     pub profile: Option<Profile>,
     pub weekly_goal_minutes: Option<u16>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub custom_exam_dates: Vec<CustomExamDate>,
 }
 
 impl Default for Planner {
@@ -315,6 +456,7 @@ impl Default for Planner {
             topics: vec![],
             profile: None,
             weekly_goal_minutes: None,
+            custom_exam_dates: vec![],
         }
     }
 }
@@ -345,6 +487,9 @@ impl Planner {
                 .ok_or("The task no longer exists.")?;
             task.completions = std::mem::take(&mut previous.completions);
             task.skipped = std::mem::take(&mut previous.skipped);
+            task.checklist.done = std::mem::take(&mut previous.checklist.done);
+            task.checklist.next = task.checklist.next.max(previous.checklist.next);
+            task.checklist.prune();
             let id = task.id;
             *previous = task;
             Ok(id)
@@ -364,7 +509,60 @@ impl Planner {
         Ok(())
     }
 
+    pub fn has_new_fields(&self) -> bool {
+        !self.custom_exam_dates.is_empty()
+            || self.tasks.iter().any(|task| !task.checklist.is_default())
+    }
+
+    pub fn set_custom_exam_date(
+        &mut self,
+        exam: Exam,
+        year: u16,
+        day: Option<Day>,
+    ) -> Result<(), &'static str> {
+        if day.is_some_and(|day| !day.valid() || day.year != year || year < 2020) {
+            return Err("Choose a date within the selected exam year.");
+        }
+        let index = self
+            .custom_exam_dates
+            .iter()
+            .position(|record| record.exam == exam && record.day.year == year);
+        match (index, day) {
+            (Some(index), Some(day)) => self.custom_exam_dates[index].day = day,
+            (Some(index), None) => {
+                self.custom_exam_dates.remove(index);
+            }
+            (None, Some(day)) if self.custom_exam_dates.len() < 256 => {
+                self.custom_exam_dates.push(CustomExamDate { exam, day })
+            }
+            (None, Some(_)) => return Err("Custom exam date limit reached."),
+            (None, None) => {}
+        }
+        Ok(())
+    }
+
+    pub fn custom_exams_on(&self, day: Day) -> impl Iterator<Item = Exam> + '_ {
+        let active = self.profile.filter(|profile| profile.year == day.year);
+        self.custom_exam_dates
+            .iter()
+            .filter(move |record| {
+                record.day == day
+                    && active.is_some_and(|profile| profile.track.exams().contains(&record.exam))
+            })
+            .map(|record| record.exam)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
+        let mut dates = BTreeSet::new();
+        if self.custom_exam_dates.len() > 256
+            || self.custom_exam_dates.iter().any(|record| {
+                !record.day.valid()
+                    || record.day.year < 2020
+                    || !dates.insert((record.exam as u8, record.day.year))
+            })
+        {
+            return Err("Invalid custom exam date.");
+        }
         let mut ids = BTreeSet::new();
         let mut id = |id| id > 0 && id < self.next && ids.insert(id);
         if self
@@ -402,6 +600,67 @@ impl Topic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checklist_completion_is_per_occurrence_and_stable_across_edits() {
+        let first: Day = "2027-01-07".parse().unwrap();
+        let later: Day = "2027-01-08".parse().unwrap();
+        let mut planner = Planner::default();
+        let mut task = Task::new(first, "Review", 1);
+        task.repeat = Repeat::Daily;
+        task.checklist.add("Read").unwrap();
+        task.checklist.add("Practice").unwrap();
+        let id = planner.save_task(task).unwrap();
+        let item = planner.tasks[0].checklist.items[0].id;
+        planner.tasks[0]
+            .set_checklist_item(first, item, true)
+            .unwrap();
+        let mut draft = planner.tasks[0].clone();
+        draft.checklist.add("Check errors").unwrap();
+        draft.checklist.items[0].title = "Read the worked example".into();
+        assert_eq!(planner.save_task(draft).unwrap(), id);
+        assert!(planner.tasks[0].checklist.checked(first, item));
+        assert!(!planner.tasks[0].checklist.checked(later, item));
+        assert!(planner.tasks[0].completions.is_empty());
+        let duplicate = planner.tasks[0].duplicate_for(first, 10);
+        assert!(!duplicate.checklist.checked(first, item));
+        planner.tasks[0].skip(later);
+        assert!(planner.tasks[0]
+            .set_checklist_item(later, item, true)
+            .is_err());
+        planner.tasks[0].checklist.remove(item);
+        assert!(planner.validate().is_ok());
+    }
+
+    #[test]
+    fn custom_dates_are_filtered_by_active_exam_and_year() {
+        let date: Day = "2027-04-07".parse().unwrap();
+        let mut plan = Planner {
+            profile: Some(Profile {
+                track: Track::Main,
+                year: 2027,
+            }),
+            ..Planner::default()
+        };
+        plan.set_custom_exam_date(Exam::Main, 2027, Some(date))
+            .unwrap();
+        plan.set_custom_exam_date(Exam::Advanced, 2027, Some(date))
+            .unwrap();
+        assert!(plan
+            .set_custom_exam_date(Exam::Neet, 2026, Some(date))
+            .is_err());
+        assert_eq!(plan.custom_exams_on(date).collect::<Vec<_>>(), [Exam::Main]);
+        plan.profile = Some(Profile {
+            track: Track::Both,
+            year: 2027,
+        });
+        assert_eq!(plan.custom_exams_on(date).count(), 2);
+        plan.set_custom_exam_date(Exam::Main, 2027, None).unwrap();
+        assert_eq!(
+            plan.custom_exams_on(date).collect::<Vec<_>>(),
+            [Exam::Advanced]
+        );
+    }
 
     #[test]
     fn civil_recurrence_survives_leap_day_and_has_independent_occurrences() {

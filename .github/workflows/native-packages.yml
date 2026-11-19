@@ -162,6 +162,14 @@ jobs:
           executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
           file "$app/$executable" | grep -q arm64
           test ! -f "$app/embedded.mobileprovision"
+          {
+            printf 'Source commit: %s\n' "$GITHUB_SHA"
+            printf 'Bundle ID: app.ellipse.workspace\n'
+            printf 'Minimum OS: '
+            /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist"
+            printf 'Embedded device provisioning: absent\n'
+            codesign --display --verbose=2 "$app" 2>&1 || true
+          } > "$RUNNER_TEMP/ellipse-ios-payload.txt"
           cp "$ipa" "$RUNNER_TEMP/ellipse-ios-device-unsigned.ipa"
       - name: Launch the packaged app on an available Simulator
         if: ${{ !cancelled() && env.ELLIPSE_SIM_APP != '' }}
@@ -173,7 +181,22 @@ jobs:
           fi
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$ELLIPSE_SIM_APP"
-          xcrun simctl launch "$device" app.ellipse.workspace
+          status=0
+          xcrun simctl launch "$device" app.ellipse.workspace || status=$?
+          xcrun simctl spawn "$device" log show --last 3m --style compact \
+            --predicate 'process == "Ellipse"' > "$RUNNER_TEMP/ellipse-ios-simulator.log" || true
+          exit "$status"
+      - name: Record SHA-256 artifact digests
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP"
+          artifacts=()
+          for artifact in ellipse-ios-simulator.zip ellipse-ios-device-unsigned.ipa; do
+            if [ -f "$artifact" ]; then artifacts+=("$artifact"); fi
+          done
+          if [ "${#artifacts[@]}" -gt 0 ]; then
+            shasum -a 256 "${artifacts[@]}" > ellipse-ios-sha256.txt
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -181,6 +204,9 @@ jobs:
           path: |
             ${{ runner.temp }}/ellipse-ios-simulator.zip
             ${{ runner.temp }}/ellipse-ios-device-unsigned.ipa
+            ${{ runner.temp }}/ellipse-ios-sha256.txt
+            ${{ runner.temp }}/ellipse-ios-payload.txt
+            ${{ runner.temp }}/ellipse-ios-simulator.log
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:

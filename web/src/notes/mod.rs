@@ -4,13 +4,16 @@ mod editor;
 mod inkpad;
 mod io;
 mod library;
+mod pdf_navigator;
 mod productivity;
 mod study;
+
+pub(crate) use io::diagnostics;
 
 use ellipse_core::notes::{Book, History, Id, Vault};
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
-use std::{collections::BTreeMap, rc::Rc};
+use std::{collections::BTreeMap, rc::Rc, time::Duration};
 use wasm_bindgen_futures::spawn_local;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,6 +295,40 @@ pub fn Notes(
     };
     if local {
         load();
+    }
+    if let Ok(scheduler) = leptos::leptos_dom::helpers::set_interval_with_handle(
+        move || {
+            if loaded.try_get_untracked() != Some(true)
+                || state.saving.try_get_untracked() != Some(SaveState::Clean)
+                || state.maintenance.get_untracked()
+                || state.recovery_required.get_untracked()
+                || state.restore_required.get_untracked()
+                || window()
+                    .document()
+                    .is_some_and(|document| document.hidden())
+                || !state
+                    .vault
+                    .with_untracked(|vault| vault.study.cycle.is_some())
+            {
+                return;
+            }
+            let timestamp = state.timer_now();
+            if state
+                .vault
+                .with_untracked(|vault| vault.study.cycle_due(timestamp))
+            {
+                let _ = state.edit_productivity(|vault| {
+                    vault
+                        .study
+                        .advance_cycle(timestamp)
+                        .then_some(())
+                        .ok_or("End the current cycle before starting another.")
+                });
+            }
+        },
+        Duration::from_millis(500),
+    ) {
+        on_cleanup(move || scheduler.clear());
     }
     let settings = library::LibraryView::new();
     view! {

@@ -19,6 +19,16 @@ extern "C" {
     fn close_pdf(pdf: &JsValue);
     #[wasm_bindgen(js_name = renderPdf)]
     pub fn render_pdf(pdf: &JsValue, page: u32, canvas: &web_sys::HtmlCanvasElement) -> Promise;
+    #[wasm_bindgen(js_name = pdfOutline)]
+    pub fn pdf_outline(pdf: &JsValue) -> Promise;
+    #[wasm_bindgen(js_name = renderPdfThumbnail)]
+    pub fn render_pdf_thumbnail(
+        pdf: &JsValue,
+        page: u32,
+        canvas: &web_sys::HtmlCanvasElement,
+    ) -> Promise;
+    #[wasm_bindgen(js_name = cancelPdfThumbnail)]
+    pub fn cancel_pdf_thumbnail(canvas: &web_sys::HtmlCanvasElement);
     #[wasm_bindgen(js_name = findPdf)]
     pub fn find_pdf(pdf: &JsValue, query: &str) -> Promise;
     #[wasm_bindgen(js_name = storePdf)]
@@ -45,6 +55,13 @@ pub struct PdfPage {
     pub width: f32,
     pub height: f32,
     pub matrix: [f32; 6],
+}
+
+#[derive(Clone, Deserialize)]
+pub struct OutlineEntry {
+    pub title: String,
+    pub page: Option<usize>,
+    pub depth: u8,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +120,14 @@ pub async fn typed<T: DeserializeOwned>(promise: Promise) -> Result<T, String> {
 
 pub async fn load() -> Result<Snapshot, String> {
     typed(invoke_notes("notes_load", &js_sys::Object::new().into())).await
+}
+
+pub async fn diagnostics() -> Result<String, String> {
+    typed(invoke_notes(
+        "notes_diagnostics",
+        &js_sys::Object::new().into(),
+    ))
+    .await
 }
 
 pub async fn save(head: u32, vault: &Vault) -> Result<u32, String> {

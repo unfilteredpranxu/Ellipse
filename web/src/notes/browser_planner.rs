@@ -45,7 +45,7 @@ impl BrowserPlanner {
             }
             let data: BrowserData = serde_json::from_str(raw)
                 .map_err(|_| "The saved browser planner could not be read.")?;
-            if data.version != 1 {
+            if !(1..=2).contains(&data.version) {
                 return Err(
                     "The saved browser planner requires a different version of Ellipse.".into(),
                 );
@@ -89,7 +89,7 @@ impl BrowserPlanner {
         };
         candidate.validate()?;
         let raw = serde_json::to_string(&BrowserData {
-            version: 1,
+            version: 2,
             planner: candidate.planner,
             study: candidate.study,
         })

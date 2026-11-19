@@ -9,7 +9,10 @@ pub fn device_time() -> RwSignal<i64> {
     if let Ok(timer) = set_interval_with_handle(
         move || {
             let next = seconds();
-            if now.get_untracked() != next {
+            if now
+                .try_get_untracked()
+                .is_some_and(|current| current != next)
+            {
                 now.set(next);
             }
         },

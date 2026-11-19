@@ -83,6 +83,14 @@ fn SignIn(message: RwSignal<String>, open_section: Callback<Section>) -> impl In
                                 <button type="button" on:click=move |_|open_section.run(section)>{section.label()}</button>
                             })}
                         </nav>
+                        <button type="button" class="local-diagnostics" on:click=move |_|{
+                            message.set("Preparing local diagnostics…".into());
+                            wasm_bindgen_futures::spawn_local(async move {
+                                let result=notes::diagnostics().await;
+                                let _=message.try_set(result.map(|path|format!("Diagnostics saved to {path}"))
+                                    .unwrap_or_else(|error|error));
+                            });
+                        }>"Save local diagnostics"</button>
                     </Show>
                     <p class="notice" role="status" aria-live="polite">{move || message.get()}</p>
                 </div>

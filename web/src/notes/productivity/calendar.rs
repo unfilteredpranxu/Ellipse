@@ -124,12 +124,16 @@ pub(super) fn Calendar(state: NotesState, section: RwSignal<Option<Section>>) ->
                                 } else {(shift(day,-i32::from(day.weekday())),7)};
                                 (0..count).map(|offset|{
                                     let cell=shift(anchor,offset);
-                                    let total=state.vault.with(|v|v.planner.tasks.iter().filter(|task|task.occurs(cell)).count());
+                                    let (total,has_exam)=state.vault.with(|v|(
+                                        v.planner.tasks.iter().filter(|task|task.occurs(cell)).count(),
+                                        v.planner.custom_exams_on(cell).next().is_some(),
+                                    ));
                                     view!{<button type="button" class:other-month=cell.month!=day.month
                                         aria-label=cell.to_string() aria-pressed=(cell==day).to_string()
                                         on:click=move |_|selected.set(cell)>
                                         <span>{cell.day}</span>
                                         { (total>0).then(||view!{<small aria-label=format!("{total} tasks")>{total}</small>}) }
+                                        {has_exam.then(||view!{<span class="planner-exam-dot" aria-label="Custom exam date"></span>})}
                                     </button>}
                                 }).collect::<Vec<_>>()
                             }}
@@ -138,6 +142,14 @@ pub(super) fn Calendar(state: NotesState, section: RwSignal<Option<Section>>) ->
                 </Show>
                 <section class="planner-agenda" aria-label="Selected day">
                     <h2>{move || localized(&date_at(selected.get(),0),"dateStyle","full")}</h2>
+                    <ul class="planner-exam-list">
+                        {move ||{
+                            let day=selected.get();
+                            state.vault.with(|vault|vault.planner.custom_exams_on(day)
+                                .map(|exam|view!{<li>{format!("{} · Custom date",exam.label())}</li>})
+                                .collect::<Vec<_>>())
+                        }}
+                    </ul>
                     <p>{move ||{
                         let key=selected.get().to_string();
                         scheduled.with(|tasks|format!("{} of {} tasks complete",
@@ -169,6 +181,21 @@ pub(super) fn Calendar(state: NotesState, section: RwSignal<Option<Section>>) ->
                     }}
                 </section>
             </div>
+            {move ||{
+                let current=today();
+                let overdue=state.vault.with(|vault|vault.planner.tasks.iter()
+                    .filter(|task|task.overdue(current)).map(|task|(task.day,task.title.clone())).collect::<Vec<_>>());
+                (!overdue.is_empty()).then(||view!{
+                    <details class="planner-overdue">
+                        <summary>{format!("Overdue one-off tasks ({})",overdue.len())}</summary>
+                        <ul>{overdue.into_iter().map(|(day,title)|view!{
+                            <li><button type="button" on:click=move |_|selected.set(day)>
+                                {format!("{title} · {day}")}
+                            </button></li>
+                        }).collect::<Vec<_>>()}</ul>
+                    </details>
+                })
+            }}
             <p role="status">{move ||notice.get()}</p>
             {move ||draft.get().map(|task|view!{
                 <TaskForm state task save cancel=Callback::new(move |()|draft.set(None))/>
@@ -229,12 +256,31 @@ fn TaskRow(
             </label>
             {(!subtitle.is_empty()).then(||view!{<p class="planner-task-meta">{subtitle}</p>})}
             {(!task.details.is_empty()).then(||view!{<p>{task.details}</p>})}
+            <ul class="planner-checklist">
+                {task.checklist.items.iter().map(|item|{
+                    let item_id=item.id;
+                    let checked=task.checklist.checked(day,item_id);
+                    let title=item.title.clone();
+                    view!{<li><label class="planner-check">
+                        <input type="checkbox" aria-label=format!("Checklist item {title}") prop:checked=move ||checked
+                            on:change=move |event|{
+                                let checked=event_target_checked(&event);
+                                let result=state.edit_productivity(|vault|vault.planner.tasks.iter_mut()
+                                    .find(|task|task.id==id).ok_or("The task no longer exists.")?
+                                    .set_checklist_item(day,item_id,checked));
+                                if let Err(error)=result {
+                                    event_target::<web_sys::HtmlInputElement>(&event).set_checked(!checked);
+                                    notice.set(error);
+                                }
+                            }/>
+                        {title}
+                    </label></li>}
+                }).collect::<Vec<_>>()}
+            </ul>
             <div class="planner-controls">
                 <button type="button" on:click=move |_|draft.set(Some(record.get_value()))>"Edit task"</button>
                 <button type="button" on:click=move |_|{
-                    let mut copy=record.get_value();
-                    copy.id=0; copy.day=day; copy.created=now(); copy.completions.clear(); copy.skipped.clear();
-                    draft.set(Some(copy));
+                    draft.set(Some(record.with_value(|task|task.duplicate_for(day,now()))));
                 }>"Duplicate"</button>
                 <button type="button" on:click=move |_|{
                     state.focus_task.set(Some(id));state.focus_topic.set(None);section.set(Some(Section::Focus));
@@ -268,6 +314,8 @@ fn TaskForm(
     save: Callback<Task>,
     cancel: Callback<()>,
 ) -> impl IntoView {
+    let new_item = RwSignal::new(String::new());
+    let item_status = RwSignal::new(String::new());
     let draft = RwSignal::new(task);
     let repeat = draft.with_untracked(|t| format!("{:?}", t.repeat));
     let priority = draft.with_untracked(|t| format!("{:?}", t.priority));
@@ -332,6 +380,35 @@ fn TaskForm(
                     {topics.into_iter().map(|(id,title)|view!{<option value=id>{title}</option>}).collect::<Vec<_>>()}
                 </select></label>
             </div>
+            <fieldset class="planner-checklist-editor">
+                <legend>"Checklist"</legend>
+                <ul class="planner-checklist">
+                    {move ||draft.with(|task|task.checklist.items.clone()).into_iter().map(|item|{
+                        let id=item.id;
+                        let edit_label=format!("Edit checklist item {}",item.title);
+                        view!{<li class="planner-controls">
+                            <input aria-label=edit_label maxlength=120 prop:value=item.title on:change=move |e|{
+                                let title=label(&event_target_value(&e));
+                                if !title.is_empty(){
+                                    draft.update(|task|if let Some(item)=task.checklist.items.iter_mut().find(|item|item.id==id){item.title=title;});
+                                }
+                            }/>
+                            <button type="button" on:click=move |_|draft.update(|task|task.checklist.remove(id))>"Remove item"</button>
+                        </li>}
+                    }).collect::<Vec<_>>()}
+                </ul>
+                <div class="planner-controls">
+                    <label>"New checklist item"<input maxlength=120 prop:value=move ||new_item.get()
+                        on:input=move |e|new_item.set(event_target_value(&e))
+                        on:keydown=move |e:web_sys::KeyboardEvent|if e.key()=="Enter"{e.prevent_default();}/></label>
+                    <button type="button" on:click=move |_|{
+                        let result=draft.try_update(|task|task.checklist.add(&new_item.get_untracked()));
+                        if result==Some(Ok(())){new_item.set(String::new());}
+                        item_status.set(result.and_then(Result::err).unwrap_or_default().into());
+                    }>"Add checklist item"</button>
+                </div>
+                <p role="status">{move ||item_status.get()}</p>
+            </fieldset>
             <div class="planner-controls">
                 <button class="notes-primary" type="submit">"Save task"</button>
                 <button type="button" on:click=move |_|cancel.run(())>"Cancel"</button>

@@ -628,12 +628,18 @@ pub fn Editor(state: NotesState, id: Id) -> impl IntoView {
                         </div>
                         <PaperControls state id index=page_index page/>
                     </Show>
+                    {if is_pdf {
+                        view!{<super::pdf_navigator::PdfNavigator pdf page_index page_total navigate=Callback::new(navigate)/>}.into_any()
+                    } else {
+                        view!{
                     <div class="notes-page-list">
                         {move ||state.vault.with(|v|v.book(id).map(|b|b.pages.iter().enumerate().map(|(i,page)|{
                             view!{<button type="button" aria-current=move ||if page_index.get()==i{"page"}else{"false"}
                                 on:click=move |_|navigate(i)>{format!("{}{}",i+1,if page.bookmarked{" · Bookmark"}else{""})}</button>}
                         }).collect::<Vec<_>>()))}
                     </div>
+                        }.into_any()
+                    }}
                 </aside>
             </Show>
             <div class="notes-workarea" node_ref=scroll>

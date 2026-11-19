@@ -2,7 +2,7 @@ use super::{
     NotesState, now,
     productivity::{date_at, readable_duration, shift, today},
 };
-use ellipse_core::notes::{Id, SessionKind};
+use ellipse_core::notes::{Cycle, Id, SessionKind};
 use leptos::{leptos_dom::helpers::set_interval_with_handle, prelude::*};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -52,11 +52,18 @@ pub fn StudyPanel(
             .unwrap_or_default()
     }));
     let minutes = RwSignal::new(25u16);
+    let automatic = RwSignal::new(false);
+    let rounds = RwSignal::new(4u8);
+    let rest_minutes = RwSignal::new(5u16);
     let kind = RwSignal::new(SessionKind::Focus);
     let clock = RwSignal::new(state.timer_now());
     let notice = RwSignal::new(String::new());
     if let Ok(timer) = set_interval_with_handle(
-        move || clock.set(state.timer_now()),
+        move || {
+            if clock.try_get_untracked().is_some() {
+                clock.set(state.timer_now());
+            }
+        },
         Duration::from_millis(500),
     ) {
         on_cleanup(move || timer.clear());
@@ -104,6 +111,15 @@ pub fn StudyPanel(
         } else {
             kind.get_untracked()
         };
+        let cycle = if full && automatic.get_untracked() && kind == SessionKind::Focus {
+            Some(Cycle {
+                focus_minutes: minutes,
+                break_minutes: rest_minutes.get_untracked(),
+                remaining: rounds.get_untracked(),
+            })
+        } else {
+            None
+        };
         let result = state.edit_productivity(|vault| {
             if !vault.study.start(
                 &subject.get_untracked(),
@@ -118,6 +134,10 @@ pub fn StudyPanel(
                 session.task = task.get_untracked();
                 session.topic = topic.get_untracked();
             }
+            // The controls bound every parameter before the active session is created.
+            if let Some(cycle) = cycle {
+                vault.study.enable_cycle(cycle)?;
+            }
             Ok(())
         });
         clock.set(state.timer_now());
@@ -131,6 +151,9 @@ pub fn StudyPanel(
             <p>{move ||active.with(|s|s.as_ref().map(|s|if s.subject.is_empty(){"Independent study".into()}else{s.subject.clone()}))}</p>
             <Show when=move ||active.with(|s|s.as_ref().is_some_and(|s|s.target_ms.is_some_and(|target|s.elapsed(clock.get())>=target)))>
                 <p>"Target reached. Finish to record this session."</p>
+            </Show>
+            <Show when=move ||state.vault.with(|v|v.study.cycle.is_some())>
+                <p>{move ||state.vault.with(|v|v.study.cycle.map(|cycle|format!("{} focus rounds remaining",cycle.remaining)))}</p>
             </Show>
             <div class="notes-row focus-controls">
                 <button type="button" on:click=move |_|{
@@ -150,6 +173,12 @@ pub fn StudyPanel(
                     });
                     notice.set(result.err().unwrap_or_default());
                 }>"Finish and log"</button>
+                {full.then(||view!{<button type="button" on:click=move |_|{
+                    if window().confirm_with_message("Discard the active phase? Completed phases will remain in your log.").unwrap_or(false){
+                        let result=state.edit_productivity(|vault|{vault.study.cancel(); Ok(())});
+                        notice.set(result.err().unwrap_or_default());
+                    }
+                }>"Discard active phase"</button>})}
             </div>
         }>
             {full.then(||view!{<div class="focus-preview" aria-hidden="true">{move || if minutes.get()==0 {"00:00:00".into()}else{duration(i64::from(minutes.get()) * 60_000)}}</div>})}
@@ -172,6 +201,21 @@ pub fn StudyPanel(
                         if value==0{kind.set(SessionKind::Stopwatch);}
                         else if kind.get_untracked()==SessionKind::Stopwatch{kind.set(SessionKind::Focus);}
                     }}/></label>
+                {full.then(||view!{
+                    <Show when=move || { kind.get()==SessionKind::Focus && minutes.get()>0 }>
+                        <details class="focus-links" open=move ||automatic.get()>
+                            <summary>"Pomodoro cycle"</summary>
+                            <label class="notes-row"><input type="checkbox" prop:checked=move ||automatic.get()
+                                on:change=move |e|automatic.set(event_target_checked(&e))/>"Advance focus and breaks automatically"</label>
+                            <div class="planner-form-grid">
+                                <label>"Focus rounds"<input type="number" min=1 max=12 prop:value=move ||rounds.get().to_string()
+                                    on:change=move |e|{if let Ok(value)=event_target_value(&e).parse::<u8>(){rounds.set(value.clamp(1,12));}}/></label>
+                                <label>"Break minutes"<input type="number" min=1 max=120 prop:value=move ||rest_minutes.get().to_string()
+                                    on:change=move |e|{if let Ok(value)=event_target_value(&e).parse::<u16>(){rest_minutes.set(value.clamp(1,120));}}/></label>
+                            </div>
+                        </details>
+                    </Show>
+                })}
                 <button type="button" class="notes-primary" on:click=move |_|start()>"Start timer"</button>
             </div>
         </Show>
