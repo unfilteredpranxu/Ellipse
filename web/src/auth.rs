@@ -23,6 +23,8 @@ extern "C" {
     fn subscribe_auth(callback: &Function) -> Function;
     #[wasm_bindgen(js_name = ellipseLogin)]
     pub fn ellipse_login();
+    #[wasm_bindgen(js_name = completeNativeLogin)]
+    pub fn complete_native_login(response: &str) -> js_sys::Promise;
     #[wasm_bindgen(js_name = ellipseLogout)]
     pub fn ellipse_logout();
     #[wasm_bindgen(js_name = isNative)]

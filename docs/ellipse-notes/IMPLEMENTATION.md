@@ -4,7 +4,7 @@
 
 Signed-in website users open **Notes** from the Ellipse workspace. The website reads explicitly chosen local PDFs and Ellipse notebook JSON backups. The open library is transient and has no connection to a private installed library. Web authoring and native storage IPC are unavailable on the public origin.
 
-The installed app offers **Open Notes on this device** at its signed-out screen. This is an explicit device-local vault under the OS app profile. It does not create a Firebase session, unlock the authenticated workspace, or expose an account's data. Native Google OAuth remains unavailable. Native commands accept the main packaged app origin and the configured loopback development origin in debug builds. Native artwork uses a separate device-local media namespace. Documents, text, audio data, images and PDFs have no automatic upload path.
+The installed app offers **Open Notes on this device** at its signed-out screen. This is an explicit device-local vault under the OS app profile. It does not create a Firebase session, unlock the authenticated workspace, or expose an account's data. Installed Google sign-in uses the system-browser pairing flow. Account sign-in leaves the Notes vault device-local. Native commands accept the main packaged app origin and the configured loopback development origin in debug builds. Native artwork uses a separate device-local media namespace. Documents, text, audio data, images and PDFs have no automatic upload path.
 
 ## Data format and recovery
 

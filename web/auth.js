@@ -36,18 +36,26 @@ function explain(error) {
   return messages[error?.code] || "Google could not complete the request. Try again.";
 }
 
+export async function firebaseModules() {
+  const [app, sdk] = await Promise.all([
+    import(`${sdkRoot}/firebase-app.js`),
+    import(`${sdkRoot}/firebase-auth.js`)
+  ]);
+  return [app, sdk, config];
+}
+
 function start() {
-  if (native || firebase || loading) return;
-  publish({type: "checking"});
+  if (firebase || loading) return loading;
+  if (!native) publish({type: "checking"});
   const timer = setTimeout(() => {
     publish({type: "unavailable", message: "Google sign-in is taking longer than expected."});
   }, 12000);
-  loading = Promise.all([
-    import(`${sdkRoot}/firebase-app.js`),
-    import(`${sdkRoot}/firebase-auth.js`)
-  ]).then(([app, sdk]) => {
+  loading = firebaseModules().then(([app, sdk]) => {
     if (!subscribers.size) return;
-    const auth = sdk.getAuth(app.getApps().length ? app.getApp() : app.initializeApp(config));
+    const instance = app.getApps().length ? app.getApp() : app.initializeApp(config);
+    const auth = native
+      ? sdk.initializeAuth(instance, {persistence: sdk.browserLocalPersistence})
+      : sdk.getAuth(instance);
     firebase = {auth, sdk};
     unsubscribe = sdk.onAuthStateChanged(auth, user => {
       clearTimeout(timer);
@@ -66,6 +74,7 @@ function start() {
     if (!subscribers.size) clearTimeout(timer);
     loading = undefined;
   });
+  return loading;
 }
 
 export function subscribeAuth(callback) {
@@ -82,9 +91,11 @@ export function subscribeAuth(callback) {
   };
 }
 
-export function ellipseLogin() {
+export async function ellipseLogin() {
   if (native) {
-    publish({type: "error", message: "Native sign-in is not yet configured. Use Ellipse in your browser to sign in."});
+    Promise.resolve().then(() => window.__TAURI_INTERNALS__.invoke("begin_google_sign_in")).then(() => {
+      publish({type: "pairing", message: "Sign in in your browser, then paste the response here."});
+    }).catch(error => publish({type: "error", message: typeof error === "string" ? error : "Could not open Google sign-in."}));
     return;
   }
   if (!firebase) {
@@ -95,6 +106,20 @@ export function ellipseLogin() {
   publish({type: "busy"});
   sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider())
     .catch(error => publish({type: "error", message: explain(error)}));
+}
+
+export async function completeNativeLogin(response) {
+  if (!native) return;
+  try {
+    if (!firebase) await start();
+    if (!firebase) throw new Error("Firebase is unavailable.");
+    const {auth, sdk} = firebase;
+    const raw = await window.__TAURI_INTERNALS__.invoke("finish_google_sign_in", {response});
+    const {idToken, accessToken} = JSON.parse(raw);
+    await sdk.signInWithCredential(auth, sdk.GoogleAuthProvider.credential(idToken || null, accessToken || null));
+  } catch (error) {
+    publish({type: "error", message: typeof error === "string" ? error : explain(error)});
+  }
 }
 
 export function ellipseLogout() {

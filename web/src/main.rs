@@ -34,7 +34,7 @@ fn App() -> impl IntoView {
         .into_any(),
         Session::SignedOut => view! { <SignIn message open_section/> }.into_any(),
         Session::SignedIn(account) if open.get() => view! {
-            <notes::Notes local=false account=account.uid section back=close_notes/>
+            <notes::Notes local=auth::is_native() account=account.uid section back=close_notes/>
         }
         .into_any(),
         Session::SignedIn(account) => view! {
@@ -46,6 +46,8 @@ fn App() -> impl IntoView {
 
 #[component]
 fn SignIn(message: RwSignal<String>, open_section: Callback<Section>) -> impl IntoView {
+    let pairing = RwSignal::new(false);
+    let response = NodeRef::<leptos::html::Textarea>::new();
     view! {
         <main class="screen" aria-label="Ellipse welcome">
             <div class="hero-wrap">
@@ -65,7 +67,7 @@ fn SignIn(message: RwSignal<String>, open_section: Callback<Section>) -> impl In
                     <p>"Sign in to pick up where you left off."</p>
                 </div>
                 <div class="bottom">
-                        <button class="signin-button" type="button" on:click=move |_| auth::ellipse_login()>
+                        <button class="signin-button" type="button" on:click=move |_| { pairing.set(auth::is_native()); auth::ellipse_login(); }>
                             <svg class="google-mark" width="21" height="21" viewBox="0 0 48 48" aria-hidden="true">
                                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                                 <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.04 46.98 31.9 46.98 24.55z"/>
@@ -74,6 +76,21 @@ fn SignIn(message: RwSignal<String>, open_section: Callback<Section>) -> impl In
                             </svg>
                             <span>"Continue with Google"</span>
                         </button>
+                    <Show when=move || pairing.get()>
+                        <form on:submit=move |event| {
+                            event.prevent_default();
+                            if let Some(field) = response.get_untracked() {
+                                let code = field.value();
+                                field.set_value("");
+                                let _ = auth::complete_native_login(&code);
+                            }
+                        }>
+                            <label>"Sign-in response"
+                                <textarea node_ref=response required maxlength=16384 autocomplete="off" spellcheck="false"></textarea>
+                            </label>
+                            <button type="submit">"Finish Google sign-in"</button>
+                        </form>
+                    </Show>
                     <Show when=auth::is_native>
                         <button type="button" class="signin-button local-notes-button" on:click=move |_|open_section.run(Section::Notes)>
                             "Open Notes on this device"

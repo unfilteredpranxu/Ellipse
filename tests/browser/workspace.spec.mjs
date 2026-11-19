@@ -21,16 +21,26 @@ const fakeAuth = `
     for (const listener of listeners) listener(user);
   }
   export const getAuth = () => auth;
+  export const initializeAuth = () => auth;
   export function onAuthStateChanged(_, listener) {
     listeners.add(listener);
     const timer = setTimeout(() => listener(auth.currentUser), window.__authDelay || 0);
     return () => { clearTimeout(timer); listeners.delete(listener); };
   }
   export class GoogleAuthProvider {
+    setCustomParameters() {}
+    static credential(idToken, accessToken) { return {idToken, accessToken}; }
     addScope(scope) { this.scope = scope; }
     static credentialFromResult(result) { return result.credential; }
   }
-  export async function signInWithPopup() { session(people[window.__testAccount || "primary"]); }
+  export async function signInWithPopup() {
+    session(people[window.__testAccount || "primary"]);
+    return {credential:{idToken:"fixture-google-id-token"}};
+  }
+  export async function signInWithCredential(_, credential) {
+    if (credential.idToken !== "fixture-google-id-token") throw new Error("Invalid fixture token");
+    session(people.primary);
+  }
   export async function signOut() { session(null); }
   export async function reauthenticateWithPopup(user, provider) {
     if (user !== auth.currentUser || !provider.scope.endsWith("/drive.appdata")) throw Error("Bad Drive request");
@@ -79,7 +89,7 @@ test("auth resolution, keyboard mode changes, session restoration and account is
   await expect(homeMode(page)).toHaveValue("New Tab");
 });
 
-test("offline Firebase failure and native blocked state stay outside the workspace", async ({page}) => {
+test("offline Firebase failure keeps both web and installed apps outside the workspace", async ({page}) => {
   await page.route(sdk, route => route.abort());
   await page.goto("/");
   await expect(page.getByText(/Could not load Google sign-in/)).toBeVisible();
@@ -87,7 +97,7 @@ test("offline Firebase failure and native blocked state stay outside the workspa
   await page.addInitScript(() => { window.__TAURI_INTERNALS__ = {}; });
   await page.reload();
   await page.getByRole("button", {name: "Continue with Google"}).click();
-  await expect(page.getByText(/Native sign-in is not yet configured/)).toBeVisible();
+  await expect(page.getByText(/Could not open Google sign-in/)).toBeVisible();
   await expect(homeMode(page)).toHaveCount(0);
 });
 
@@ -1215,4 +1225,55 @@ test("installed startup can export a local diagnostic file without opening Notes
   await page.getByRole("button",{name:"Save local diagnostics",exact:true}).click();
   await expect(page.getByText(/Diagnostics saved to Documents/)).toBeVisible();
   await expect(notesLibrary(page)).toHaveCount(0);
+});
+
+test("installed sign-in accepts a Firebase credential, restores the session, and signs out", async ({page}) => {
+  await stubFirebase(page);
+  await page.addInitScript(() => {
+    window.__TAURI_INTERNALS__ = {invoke: async (command, args) => {
+      if (command === "begin_google_sign_in") return;
+      if (command === "finish_google_sign_in" && args.response === "encrypted-fixture") {
+        return JSON.stringify({idToken:"fixture-google-id-token"});
+      }
+      throw "This response is invalid.";
+    }};
+  });
+  await page.goto("/");
+  await page.getByRole("button", {name:"Continue with Google"}).click();
+  await page.getByLabel("Sign-in response").fill("wrong");
+  await page.getByRole("button", {name:"Finish Google sign-in"}).click();
+  await expect(page.getByText("This response is invalid.")).toBeVisible();
+  await expect(homeMode(page)).toHaveCount(0);
+  await page.getByLabel("Sign-in response").fill("encrypted-fixture");
+  await page.getByRole("button", {name:"Finish Google sign-in"}).click();
+  await expect(homeMode(page)).toBeVisible();
+  await page.reload();
+  await expect(homeMode(page)).toBeVisible();
+  await page.getByRole("button", {name:"Google account",exact:true}).click();
+  await page.getByRole("button", {name:"Sign out",exact:true}).click();
+  await expect(homeMode(page)).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Open Notes on this device"})).toBeVisible();
+});
+
+test("system browser response is encrypted for the requesting app key", async ({page}) => {
+  await stubFirebase(page);
+  const crypto = (await import("node:crypto")).webcrypto;
+  const algorithm = {name:"ECDH", namedCurve:"P-256"};
+  const keys = await crypto.subtle.generateKey(algorithm, false, ["deriveBits"]);
+  const publicKey = Buffer.from(await crypto.subtle.exportKey("raw",keys.publicKey)).toString("base64url");
+  await page.goto(`/native-sign-in/#v1.${publicKey}`);
+  await page.getByRole("button",{name:"Continue with Google"}).click();
+  const response = page.getByLabel("Encrypted sign-in response");
+  await expect(response).toBeVisible();
+  expect(new URL(page.url()).hash).toBe("");
+  const [version, peer, iv, data] = (await response.inputValue()).split(".");
+  expect(version).toBe("v1");
+  const publicPeer = await crypto.subtle.importKey("raw",Buffer.from(peer,"base64url"),algorithm,false,[]);
+  const secret = await crypto.subtle.deriveBits({name:"ECDH",public:publicPeer},keys.privateKey,256);
+  const material = await crypto.subtle.importKey("raw",secret,"HKDF",false,["deriveKey"]);
+  const cipher = await crypto.subtle.deriveKey({
+    name:"HKDF",hash:"SHA-256",salt:new Uint8Array(),info:new TextEncoder().encode("Ellipse native Google pairing v1")
+  },material,{name:"AES-GCM",length:256},false,["decrypt"]);
+  const clear = await crypto.subtle.decrypt({name:"AES-GCM",iv:Buffer.from(iv,"base64url")},cipher,Buffer.from(data,"base64url"));
+  expect(JSON.parse(new TextDecoder().decode(clear))).toEqual({idToken:"fixture-google-id-token"});
 });
